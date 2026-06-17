@@ -1,0 +1,6 @@
+.playwright-mcp
+.venv
+uv.lock
+README.7z
+*.md
+*.pdf

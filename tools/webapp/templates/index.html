@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ポケカ 人 vs AI</title>
+<style>
+  :root{
+    --bg:#f3f7fb; --panel:#ffffff; --line:#e4ebf2; --ink:#1f2a3a; --sub:#6b7a90;
+    --teal:#0ea5b7; --blue:#3b82f6; --soft:#eef4fb;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:system-ui,"Segoe UI","Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;
+       background:linear-gradient(180deg,#eef5fb,#f6f9fc);color:var(--ink);}
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;background:var(--panel);
+         border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;box-shadow:0 1px 6px #0b346b0d;}
+  header h1{font-size:16px;margin:0;color:var(--teal);font-weight:800;letter-spacing:.02em;}
+  button{cursor:pointer;border:none;border-radius:10px;padding:9px 16px;font-size:14px;font-weight:600;
+         background:var(--blue);color:#fff;transition:.15s;box-shadow:0 2px 6px #3b82f633;}
+  button:hover{filter:brightness(1.05);transform:translateY(-1px);}
+  button.gray{background:#eaf0f7;color:#46566b;box-shadow:none;}
+  button:disabled{opacity:.45;cursor:default;transform:none;}
+  .wrap{display:grid;grid-template-columns:1fr 300px;gap:14px;max-width:1120px;margin:0 auto;padding:14px;}
+  @media(max-width:860px){.wrap{grid-template-columns:1fr;}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 14px;
+         margin-bottom:12px;box-shadow:0 4px 18px #0b346b0a;}
+  .panel h2{margin:0 0 10px;font-size:12px;color:var(--sub);font-weight:700;letter-spacing:.04em;}
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;}
+  .field{min-height:120px;border-radius:12px;padding:6px;transition:.15s;}
+  .field.dropok{background:var(--soft);outline:2px dashed var(--blue);}
+  .meta{font-size:12px;color:var(--sub);margin-left:auto;text-align:right;line-height:1.5;}
+
+  .pcard{width:102px;border-radius:12px;background:#fff;border:1px solid var(--line);
+         box-shadow:0 3px 10px #0b346b14;cursor:pointer;overflow:hidden;transition:.15s;position:relative;}
+  .pcard:hover{transform:translateY(-4px);box-shadow:0 8px 20px #0b346b22;}
+  .pcard.active{border-color:var(--teal);box-shadow:0 0 0 2px var(--teal)55,0 6px 16px #0b346b1f;}
+  .pcard.drop{outline:2px dashed var(--blue);outline-offset:2px;}
+  .pcard.dragging{opacity:.45;}
+  .pcard .bar{height:6px;}
+  .pcard .bd{padding:6px 7px;}
+  .pcard .nm{font-size:12px;font-weight:700;line-height:1.2;min-height:29px;color:var(--ink);}
+  .pcard .art{height:54px;border-radius:8px;margin:3px 0;display:flex;align-items:center;justify-content:center;font-size:22px;overflow:hidden;}
+  /* 画像カード：カード全体を表示（トリミングなし） */
+  .pcard.imgcard{width:104px;padding:0;background:#fff;overflow:hidden;}
+  .pcard.imgcard .full{width:100%;display:block;}
+  .pcard.imgcard.active{outline:3px solid var(--teal);outline-offset:0;}
+  .ov{position:absolute;left:0;right:0;bottom:0;background:#0b1830e0;color:#fff;padding:3px 5px;}
+  .ovln{display:flex;justify-content:space-between;font-size:10px;font-weight:700;line-height:1.2;}
+  .ovene{color:#ffd84a;letter-spacing:1px;}
+  .ov .hpbar{height:4px;background:#ffffff2e;margin-top:2px;border-radius:2px;}
+  .ov .hpbar>i{display:block;height:100%;background:#2fd06e;}
+  .pcard .ln{display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#46566b;}
+  .pcard .badge{position:absolute;top:8px;right:5px;font-size:9px;font-weight:800;background:#ffffffd9;
+                color:#b8860b;border-radius:5px;padding:1px 4px;border:1px solid #0001;}
+  .hpbar{height:5px;border-radius:3px;background:#eef0f4;margin-top:3px;overflow:hidden;}
+  .hpbar>i{display:block;height:100%;background:linear-gradient(90deg,#22c55e,#16a34a);}
+  .ene{font-size:12px;color:#d97706;font-weight:800;margin-top:3px;min-height:15px;letter-spacing:1px;}
+  .empty-c{width:102px;height:118px;border-radius:12px;border:2px dashed #cfdbe8;display:flex;
+           align-items:center;justify-content:center;font-size:12px;color:#9fb0c4;}
+  /* タイプ色 */
+  .c-GRASS{background:#7bc86c}.c-FIRE{background:#ff7a59}.c-WATER{background:#4aa8ff}.c-LIGHTNING{background:#f6c945}
+  .c-PSYCHIC{background:#b07cf0}.c-FIGHTING{background:#d98a4a}.c-DARKNESS{background:#5b6478}.c-METAL{background:#9aa7bd}
+  .c-DRAGON{background:#d9b441}.c-COLORLESS{background:#c9d3e0}
+  .a-GRASS{background:#eaf6e6}.a-FIRE{background:#ffeae3}.a-WATER{background:#e3f1ff}.a-LIGHTNING{background:#fff7db}
+  .a-PSYCHIC{background:#f3e9ff}.a-FIGHTING{background:#fbeada}.a-DARKNESS{background:#e7eaf0}.a-METAL{background:#eef1f6}
+  .a-DRAGON{background:#fbf2d4}.a-COLORLESS{background:#eef2f7}
+
+  #ask{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--teal);
+       border-radius:14px;padding:14px;min-height:56px;box-shadow:0 4px 18px #0b346b0a;}
+  #ask h2{margin:0 0 6px;font-size:15px;color:var(--teal);font-weight:800;}
+  .hint{font-size:13px;color:var(--sub);margin:2px 0 10px;}
+  .opts{display:flex;flex-wrap:wrap;gap:8px;}
+  .opt{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 14px;
+       font-size:14px;cursor:pointer;color:var(--ink);font-weight:600;}
+  .opt:hover{background:#e2edf9;} .opt.sel{background:var(--blue);color:#fff;}
+  details{margin-top:10px;} summary{cursor:pointer;color:var(--sub);font-size:12px;}
+
+  #log{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 14px;
+       height:560px;display:flex;flex-direction:column;box-shadow:0 4px 18px #0b346b0a;}
+  #log h2{margin:0 0 8px;font-size:12px;color:var(--sub);font-weight:700;}
+  #logbody{overflow-y:auto;flex:1;font-size:12px;line-height:1.5;padding-right:4px;}
+  .ev{padding:5px 8px;border-radius:8px;margin-bottom:4px;animation:fade .3s;}
+  .ev.opp{background:#ffeef0;color:#9b2a3a;} .ev.you{background:#e8f6ee;color:#1f7a44;}
+  .ev.sys{color:var(--sub);font-weight:700;text-align:center;background:#f2f5f9;}
+  @keyframes fade{from{opacity:0;transform:translateX(8px);}to{opacity:1;}}
+
+  #banner{text-align:center;font-size:22px;font-weight:800;padding:16px;border-radius:14px;
+          background:var(--panel);border:1px solid var(--line);margin-bottom:12px;display:none;box-shadow:0 4px 18px #0b346b0a;}
+  .win{color:#16a34a}.lose{color:#e0556b}.draw{color:#d97706}
+
+  #overlay{position:fixed;inset:0;background:#1f2a3a55;backdrop-filter:blur(2px);display:none;
+           align-items:center;justify-content:center;z-index:20;}
+  #modal{background:#fff;border:1px solid var(--line);border-radius:16px;max-width:460px;width:92%;
+         padding:18px;box-shadow:0 20px 50px #0b346b33;}
+  #modal .mtype{display:inline-block;font-size:12px;padding:3px 10px;border-radius:12px;color:#10131f;font-weight:800;}
+  #modal h3{margin:8px 0;font-size:19px;}
+  #modal .cardimg{display:block;width:230px;max-width:70%;margin:8px auto;border-radius:10px;box-shadow:0 4px 14px #0b346b33;}
+  #modal .mv{background:var(--soft);border-radius:10px;padding:9px 11px;margin:7px 0;font-size:13px;}
+  #modal .mv b{color:var(--teal);} #modal .mrow{font-size:13px;color:#46566b;margin:3px 0;}
+  #modal .mvatk{display:block;width:100%;text-align:left;margin:7px 0;padding:10px 12px;font-size:13px;
+                font-weight:400;background:#e7f0ff;color:var(--ink);border:1px solid #cfe0fb;box-shadow:none;}
+  #modal .mvatk:hover:not([disabled]){background:#d4e6ff;transform:none;}
+  #modal .mvatk b{color:var(--teal);font-size:14px;} #modal .mvatk .mrow{color:#5a6a80;}
+  #modal .mvatk[disabled]{background:#f0f2f6;color:#9aa7b8;opacity:1;cursor:default;}
+  #modal .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ ポケカ 人 vs AI</h1>
+  <button id="newBtn">新しい対戦</button>
+  <span class="meta" id="turnInfo"></span>
+</header>
+
+<div class="wrap">
+  <div>
+    <div id="banner"></div>
+    <div class="panel"><h2>相手 (AI)</h2><div class="row" id="oppField"></div></div>
+    <div class="panel"><h2>自分（手札のカードを場へドラッグ／カードをクリックで詳細・操作）</h2>
+      <div class="row field" id="youField"></div>
+      <div style="margin-top:12px"><h2>手札</h2><div class="row" id="youHand"></div></div>
+    </div>
+    <div id="ask"></div>
+  </div>
+  <div id="log"><h2>対戦ログ</h2><div id="logbody"></div></div>
+</div>
+
+<div id="overlay"><div id="modal"></div></div>
+
+<script>
+let STATE=null, picks=[], dragHand=null, busy=false;
+const ICON={GRASS:'🍃',FIRE:'🔥',WATER:'💧',LIGHTNING:'⚡',PSYCHIC:'🔮',FIGHTING:'👊',DARKNESS:'🌙',METAL:'⚙️',DRAGON:'🐉',COLORLESS:'⭐'};
+const HAND=2, ACTIVE=4, BENCH=5;
+const CTX={0:'行動を選んでください（手札を場へドラッグ／カードをクリック）',1:'バトル場に出すたねポケモンを選んでください',
+  2:'ベンチに出すポケモンを選べます（任意）',3:'入れ替えるポケモンを選んでください',41:'先攻にしますか？',42:'手札を引き直しますか？'};
+
+async function post(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});return r.json();}
+async function get(u){const r=await fetch(u);return r.json();}
+function tgtName(o){return (String(o.label).split('→')[1]||'').replace(/[「」]/g,'').trim()||'ポケモン';}
+
+/* ---------- 選択肢の分類（手札／盤面／パネル） ---------- */
+function classify(){
+  const m={hand:{},board:{},attack:[],panel:[],playHand:new Set()};
+  const s=STATE.select; if(!s)return m;
+  s.options.forEach(o=>{
+    const ot=o.optionType;
+    if(ot==='ATTACH'||ot==='EVOLVE'||ot==='PLAY'){
+      (m.hand[o.srcIndex]=m.hand[o.srcIndex]||[]).push(o);
+      if(ot==='PLAY')m.playHand.add(o.srcIndex);
+    } else if(ot==='CARD'){
+      if(o.area===HAND)(m.hand[o.srcIndex]=m.hand[o.srcIndex]||[]).push(o);
+      else if(o.area===ACTIVE||o.area===BENCH)(m.board[o.area+':'+o.srcIndex]=m.board[o.area+':'+o.srcIndex]||[]).push(o);
+      else m.panel.push(o);
+    } else if(ot==='ATTACK'){ m.attack.push(o); }
+    else if(ot==='RETREAT'||ot==='ABILITY'){ (m.board[ACTIVE+':0']=m.board[ACTIVE+':0']||[]).push(o); }
+    else m.panel.push(o);
+  });
+  return m;
+}
+function handActions(H){
+  const hand=STATE.board.you.hand||[]; const out=[];
+  (classify().hand[H]||[]).forEach(o=>{
+    let lbl;
+    if(o.optionType==='ATTACH')lbl=`エネルギーを「${tgtName(o)}」につける`;
+    else if(o.optionType==='EVOLVE')lbl=`「${tgtName(o)}」を「${o.card?o.card.name:'進化'}」に進化させる`;
+    else if(o.optionType==='PLAY')lbl=`「${hand[H]?hand[H].name:''}」を場に出す`;
+    else lbl=`「${hand[H]?hand[H].name:''}」を選ぶ`;
+    out.push({label:lbl,index:o.index});
+  });
+  return out;
+}
+function boardActions(area,pos){
+  // ワザはカード詳細内のワザボタンで実行するため、ここには含めない（にげる・特性・選択のみ）
+  const out=[];
+  (classify().board[area+':'+pos]||[]).forEach(o=>{
+    let lbl = o.optionType==='RETREAT'?'にげる（入れ替え）' : (o.optionType==='ABILITY'?o.label:'このポケモンを選ぶ');
+    out.push({label:lbl,index:o.index});
+  });
+  return out;
+}
+// 現在使えるワザ: attackId -> 選択肢index
+function attackOptionMap(){
+  const m={};
+  ((STATE.select&&STATE.select.options)||[]).forEach(o=>{
+    if(o.optionType==='ATTACK'&&o.attackId!=null) m[o.attackId]=o.index;});
+  return m;
+}
+
+/* ---------- カードタイル ---------- */
+function tile(c,{active=false,hp=null,maxHp=null,energy=null,area=null,pos=null,hand=null,drag=false}={}){
+  if(!c)return `<div class="empty-c">なし</div>`;
+  const t=c.type||'COLORLESS';
+  const attrs=[`data-cid="${c.id}"`];
+  if(area!=null)attrs.push(`data-area="${area}"`,`data-pos="${pos}"`);
+  if(hand!=null)attrs.push(`data-hand="${hand}"`);
+  if(drag)attrs.push('draggable="true"');
+  // 場のポケモンは現在HP/エネを画像の上にオーバーレイ
+  let ov='';
+  if(hp!=null&&maxHp!=null){
+    const p=Math.max(0,Math.round(100*hp/maxHp));
+    ov=`<div class="ov"><div class="ovln"><span>HP ${hp}/${maxHp}</span><span class="ovene">${'●'.repeat(energy||0)}</span></div>
+        <div class="hpbar"><i style="width:${p}%"></i></div></div>`;
+  }
+  if(c.img){
+    // カード画像そのものを全体表示（見切れなし）
+    return `<div class="pcard imgcard ${active?'active':''}" ${attrs.join(' ')}>
+       <img class="full" src="${c.img}" loading="lazy" alt="${c.name}">${ov}</div>`;
+  }
+  // 画像が無い場合のフォールバック（色タイル）
+  let hpln='';
+  if(hp!=null&&maxHp!=null){const p=Math.max(0,Math.round(100*hp/maxHp));
+    hpln=`<div class="ln"><span>HP</span><span>${hp}/${maxHp}</span></div><div class="hpbar"><i style="width:${p}%"></i></div>`;}
+  else if(c.hp){hpln=`<div class="ln"><span>HP</span><span>${c.hp}</span></div>`;}
+  const ene=energy!=null?`<div class="ene">${'●'.repeat(energy)||'　'}</div>`:'';
+  return `<div class="pcard ${active?'active':''}" ${attrs.join(' ')}>
+     <div class="bar c-${t}"></div>
+     <div class="bd"><div class="nm">${c.name}</div><div class="art a-${t}">${ICON[t]||'⭐'}</div>${hpln}${ene}</div></div>`;
+}
+function sideField(s){
+  let h=tile(s.active,{active:true,hp:s.active?.hp,maxHp:s.active?.maxHp,energy:s.active?.energy,area:ACTIVE,pos:0});
+  h+=s.bench.length?s.bench.map((b,i)=>tile(b,{hp:b.hp,maxHp:b.maxHp,energy:b.energy,area:BENCH,pos:i})).join('')
+     :`<div class="empty-c">ベンチなし</div>`;
+  h+=`<div class="meta">手札 ${s.handCount}・山札 ${s.deck}<br>サイド ${s.prize}・トラッシュ ${s.discard}
+      ${s.conditions?.length?`<br><span style="color:#e0556b">${s.conditions.join(' ')}</span>`:''}</div>`;
+  return h;
+}
+
+/* ---------- 描画 ---------- */
+function renderBoard(){
+  const b=STATE.board;
+  document.getElementById('turnInfo').textContent=b?`ターン ${b.turn}`:'';
+  if(!b){['oppField','youField','youHand'].forEach(id=>document.getElementById(id).innerHTML='');return;}
+  document.getElementById('oppField').innerHTML=sideField(b.opp);
+  document.getElementById('youField').innerHTML=sideField(b.you);
+  const m=classify();
+  const actionable=new Set(Object.keys(m.hand).map(Number));
+  document.getElementById('youHand').innerHTML=(b.you.hand||[]).map((c,i)=>
+     tile(c,{hand:i,drag:actionable.has(i)})).join('')||'<span class="hint">なし</span>';
+  bindClicks(); bindDnD();
+}
+function renderAsk(){
+  const ask=document.getElementById('ask');
+  if(STATE.result!==-1){ask.innerHTML='';return;}
+  const s=STATE.select;
+  if(!s){ask.innerHTML=STATE.running?'<div class="hint">AIが考えています…</div>':'';return;}
+  const single=(s.minCount===1&&s.maxCount===1);
+  const m=classify();
+  let h=`<h2>あなたの番です</h2><div class="hint">${CTX[s.context]||'選んでください'}</div>`;
+  // パネルには「手札・盤面カードに紐づかない選択肢」だけ（重複排除）
+  const panelOpts = single ? m.panel : s.options; // 複数選択時のみ全部パネルに出す（フォールバック）
+  h+=`<div class="opts" id="opts"></div>`;
+  if(!single)h+=`<div style="margin-top:10px"><button id="confirm">決定 (0/${s.maxCount})</button></div>`;
+  // 安全網: すべての選択肢を折りたたみで提供
+  h+=`<details><summary>すべての選択肢を表示</summary><div class="opts" id="allopts" style="margin-top:8px"></div></details>`;
+  ask.innerHTML=h;
+
+  const opts=document.getElementById('opts'); picks=[];
+  panelOpts.forEach(o=>{
+    const el=document.createElement('div'); el.className='opt'; el.textContent=o.label||('選択'+o.index); el.dataset.i=o.index;
+    el.onclick=()=>{
+      if(single){submit([o.index]);return;}
+      const i=o.index;
+      if(picks.includes(i)){picks=picks.filter(x=>x!==i);el.classList.remove('sel');}
+      else{if(picks.length>=s.maxCount)return;picks.push(i);el.classList.add('sel');}
+      const cb=document.getElementById('confirm');if(cb)cb.textContent=`決定 (${picks.length}/${s.maxCount})`;
+    };
+    opts.appendChild(el);
+  });
+  if(single&&panelOpts.length===0&&Object.keys(m.hand).length===0&&Object.keys(m.board).length===0){
+    opts.innerHTML='<div class="hint">（操作可能なカードがありません）</div>';
+  }
+  const cb=document.getElementById('confirm');
+  if(cb)cb.onclick=()=>{if(picks.length<s.minCount){alert(`${s.minCount}個以上選んでください`);return;}submit(picks);};
+  // 全選択肢（安全網）
+  const all=document.getElementById('allopts');
+  s.options.forEach(o=>{const el=document.createElement('div');el.className='opt';el.textContent=`${o.label||('選択'+o.index)}`;
+    el.onclick=()=>submit([o.index]);all.appendChild(el);});
+}
+function renderBanner(){
+  const b=document.getElementById('banner');
+  if(STATE.result===-1){b.style.display='none';return;}
+  b.style.display='block';
+  if(STATE.result===0){b.className='win';b.textContent='🎉 あなたの勝ち！';}
+  else if(STATE.result===1){b.className='lose';b.textContent='AIの勝ち…';}
+  else{b.className='draw';b.textContent='引き分け';}
+}
+
+/* ---------- クリック→詳細＋操作モーダル ---------- */
+function bindClicks(){
+  document.querySelectorAll('#youHand .pcard[data-cid]').forEach(el=>{
+    el.addEventListener('click',()=>{if(busy)return;openCard(+el.dataset.cid,handActions(+el.dataset.hand));});});
+  document.querySelectorAll('#youField .pcard[data-cid]').forEach(el=>{
+    el.addEventListener('click',()=>{if(busy)return;openCard(+el.dataset.cid,boardActions(+el.dataset.area,+el.dataset.pos));});});
+  document.querySelectorAll('#oppField .pcard[data-cid]').forEach(el=>{
+    el.addEventListener('click',()=>{if(busy)return;openCard(+el.dataset.cid,[]);});});
+}
+async function openCard(cid,actions){
+  const c=await get('/api/card/'+cid); const t=c.type||'COLORLESS';
+  const atkMap=attackOptionMap();
+  const mv=(c.moves||[]).map(m=>{
+    const eff=m.effect?`<div class="mrow">${(m.effect||'').replace(/\n/g,'<br>')}</div>`:'';
+    const head=`<b>${m.name}</b> ${m.cost?'['+m.cost+']':''} <span style="float:right">${m.damage||''}</span>`;
+    if(m.attackId!=null){
+      const usable=atkMap[m.attackId]!=null;
+      // ワザはボタン化。エネルギーが足りて使えるときだけ押せる（不足時は淡色で押せない）
+      return `<button class="mvatk" ${usable?'':'disabled'} data-idx="${usable?atkMap[m.attackId]:''}" data-nm="${m.name}">
+                ${head}${eff}</button>`;
+    }
+    return `<div class="mv">${head}${eff}</div>`; // 特性など（非ワザ）
+  }).join('');
+  let body=mv;
+  if(!body && c.text) body=`<div class="mv">${c.text.replace(/\n/g,'<br>')}</div>`;
+  if(!body) body='<div class="mrow" style="opacity:.6">テキスト情報なし</div>';
+  const info=[]; if(c.evolvesFrom)info.push(`進化前: ${c.evolvesFrom}`);
+  if(c.weakness)info.push(`弱点: ${c.weakness}`); if(c.resistance)info.push(`抵抗: ${c.resistance}`);
+  if(c.retreat)info.push(`にげる: ${c.retreat}`);
+  let actHtml=(actions&&actions.length)
+    ?`<div class="acts">${actions.map((a,i)=>`<button data-pi="${i}">${a.label}</button>`).join('')}
+       <button class="gray" onclick="closeModal()">戻る</button></div>`
+    :`<div class="acts"><button class="gray" onclick="closeModal()">戻る</button></div>`;
+  const isTrainer=['ITEM','SUPPORTER','STADIUM','TOOL'].includes(c.cardType);
+  const chip = isTrainer ? (c.stage||'トレーナーズ') : `${ICON[t]||'⭐'} ${c.typeJP||t}`;
+  const chipCls = isTrainer ? 'c-COLORLESS' : 'c-'+t;
+  const stageRow = isTrainer ? '' : `${c.stage||''} ${c.hp?('・HP'+c.hp):''}`;
+  const imgHtml=c.img?`<img class="cardimg" src="${c.img}" alt="${c.name}">`:'';
+  document.getElementById('modal').innerHTML=`
+    <span class="mtype ${chipCls}">${chip}</span>
+    <h3>${c.name} ${c.flags?.length?`<small style="color:#b8860b">${c.flags.join(' ')}</small>`:''}</h3>
+    ${imgHtml}
+    <div class="mrow">${stageRow}　${info.join('　')}</div>
+    ${body}
+    ${actHtml}`;
+  document.querySelectorAll('#modal button[data-pi]').forEach(btn=>{
+    btn.onclick=()=>{const a=actions[+btn.dataset.pi];closeModal();submit([a.index]);};});
+  // ワザボタン → 攻撃確認
+  document.querySelectorAll('#modal button.mvatk:not([disabled])').forEach(btn=>{
+    btn.onclick=()=>confirmAction(`「${btn.dataset.nm}」で攻撃する`,[+btn.dataset.idx]);});
+  showModal();
+}
+function confirmAction(text,p){
+  document.getElementById('modal').innerHTML=`<h3>確認</h3>
+    <div class="mrow" style="font-size:15px;color:var(--ink)">${text}<br>を実行しますか？</div>
+    <div class="acts"><button onclick="doConfirm()">はい</button>
+    <button class="gray" onclick="closeModal()">いいえ</button></div>`;
+  window._pending=p; showModal();
+}
+function doConfirm(){const p=window._pending;closeModal();submit(p);}
+function showModal(){document.getElementById('overlay').style.display='flex';}
+function closeModal(){document.getElementById('overlay').style.display='none';}
+document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')closeModal();};
+
+/* ---------- ドラッグ&ドロップ（エネ付け・場に出す・進化）---------- */
+function bindDnD(){
+  document.querySelectorAll('#youHand .pcard[data-hand][draggable="true"]').forEach(el=>{
+    el.addEventListener('dragstart',()=>{dragHand=+el.dataset.hand;el.classList.add('dragging');});
+    el.addEventListener('dragend',()=>{dragHand=null;el.classList.remove('dragging');
+      document.querySelectorAll('.drop,.dropok').forEach(x=>x.classList.remove('drop','dropok'));});
+  });
+  // ポケモンの上：エネ付け or 進化
+  document.querySelectorAll('#youField .pcard[data-area]').forEach(el=>{
+    el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drop');});
+    el.addEventListener('dragleave',()=>el.classList.remove('drop'));
+    el.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();el.classList.remove('drop');
+      if(dragHand==null)return;
+      const area=+el.dataset.area,pos=+el.dataset.pos;
+      const o=(STATE.select?.options||[]).find(x=>(x.optionType==='ATTACH'||x.optionType==='EVOLVE')
+          &&x.srcIndex===dragHand&&x.inPlayArea===area&&x.inPlayIndex===pos);
+      if(!o){alert('このポケモンにはここから出せません');return;}
+      const verb=o.optionType==='EVOLVE'?'進化させる':'エネルギーをつける';
+      confirmAction(`「${tgtName(o)}」に${verb}`,[o.index]);
+    });
+  });
+  // 場（空き）への：手札カードを出す（PLAY）
+  const fld=document.getElementById('youField');
+  fld.addEventListener('dragover',e=>{e.preventDefault();fld.classList.add('dropok');});
+  fld.addEventListener('dragleave',e=>{if(e.target===fld)fld.classList.remove('dropok');});
+  fld.addEventListener('drop',e=>{e.preventDefault();fld.classList.remove('dropok');
+    if(dragHand==null)return;
+    const o=(STATE.select?.options||[]).find(x=>x.optionType==='PLAY'&&x.srcIndex===dragHand);
+    if(!o){return;}
+    const hand=STATE.board.you.hand||[];
+    confirmAction(`「${hand[dragHand]?hand[dragHand].name:'カード'}」を場に出す`,[o.index]);
+  });
+}
+
+/* ---------- イベント逐次再生 ---------- */
+function pushLog(ev){const body=document.getElementById('logbody');const d=document.createElement('div');
+  d.className='ev '+(ev.who||'sys');d.textContent=ev.text;body.appendChild(d);body.scrollTop=body.scrollHeight;}
+function evDelay(ev,total){
+  const fast=total>16;                                  // 出来事が多い時は自動で速める
+  if(/カードを引いた|を引いた/.test(ev.text)) return fast?120:300;   // ドローは速め
+  if(ev.who==='opp') return fast?500:1000;              // 相手の行動はしっかり見せる
+  if(ev.who==='sys') return fast?350:650;
+  return fast?180:380;
+}
+function playEvents(events){return new Promise(res=>{
+  if(!events||!events.length){res();return;}
+  let i=0;
+  const tick=()=>{ if(i>=events.length){res();return;} const ev=events[i++];
+    pushLog(ev); setTimeout(tick, evDelay(ev, events.length)); };
+  tick();});}
+
+/* ---------- 状態反映 ---------- */
+async function apply(ns,playback){
+  STATE=ns; renderBoard(); renderBanner();
+  document.getElementById('ask').innerHTML=(ns.events&&ns.events.length&&playback)?'<div class="hint">…経過を再生中…</div>':'';
+  if(playback){busy=true;await playEvents(ns.events);busy=false;}
+  renderAsk();
+}
+async function submit(p){closeModal();busy=true;
+  document.getElementById('ask').innerHTML='<div class="hint">処理中…</div>';
+  const ns=await post('/api/select',{picks:p});await apply(ns,true);}
+document.getElementById('newBtn').onclick=async()=>{
+  document.getElementById('logbody').innerHTML='';
+  const ns=await post('/api/new',{});pushLog({who:'sys',text:'―― 対戦開始 ――'});await apply(ns,true);};
+get('/api/state').then(s=>apply(s,false));
+</script>
+</body>
+</html>
