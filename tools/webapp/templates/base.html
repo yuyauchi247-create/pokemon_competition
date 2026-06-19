@@ -164,6 +164,30 @@
   .deckLine img{width:38px;border-radius:4px}.deckLine .ph{width:38px;height:52px;background:#eef2f7;border-radius:4px}.deckLine .nm{font-size:12px;font-weight:800;line-height:1.2}.deckLine .sub{font-size:10px;color:var(--sub)}
   .deckLine button{padding:4px 8px;border-radius:7px;box-shadow:none;}.deckLine button.minus{background:#eaf0f7;color:#46566b;}
   @media(max-width:920px){.builderTools,.builderGrid{grid-template-columns:1fr}.deckBox{position:static}.cardLibrary{max-height:420px}}
+  /* ホーム/メニュー */
+  .page{max-width:980px;margin:22px auto;padding:0 16px;}
+  .page h2.pageTitle{color:var(--teal);font-size:24px;margin:0 0 4px;}
+  .page p.pageLead{color:var(--sub);font-size:14px;margin:0 0 18px;line-height:1.6;}
+  .menuGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;}
+  .menuCard{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;
+            text-decoration:none;color:inherit;background:var(--panel);border:1px solid var(--line);
+            border-radius:18px;padding:30px 18px;box-shadow:0 6px 20px #0b346b10;transition:.15s;cursor:pointer;}
+  .menuCard:hover{transform:translateY(-3px);border-color:var(--teal);box-shadow:0 12px 28px #0b346b1f;}
+  .menuCard .ico{font-size:46px;line-height:1;}
+  .menuCard .ttl{font-size:18px;font-weight:800;color:var(--ink);}
+  .menuCard .sub{font-size:12px;color:var(--sub);line-height:1.5;}
+  .pageHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 16px;flex-wrap:wrap;}
+  .pageHead h2{margin:0;}
+  .crumb{font-size:12px;color:var(--sub);margin-bottom:10px;}
+  .crumb a{color:var(--teal);text-decoration:none;}
+  /* 一覧カード（デッキ/エージェント） */
+  .listGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
+  .listItem{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 4px 16px #0b346b0d;}
+  .listItem h3{margin:0 0 4px;font-size:15px;color:var(--ink);}
+  .listItem .tag{font-size:11px;color:var(--sub);}
+  .listItem .acts{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;}
+  .listItem button.danger{background:#fdecee;color:#c0344a;box-shadow:none;}
+  .emptyNote{color:var(--sub);font-size:14px;padding:20px;text-align:center;border:1px dashed var(--line);border-radius:14px;}
 </style>
 {% block head %}{% endblock %}
 </head>

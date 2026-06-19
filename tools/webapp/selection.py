@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_SUBMISSION = ROOT / "data" / "sample_submission"
 SAMPLE_DECKS_DIR = ROOT / "data" / "sample_decks"
 USER_DECKS_DIR = ROOT / "data" / "user_decks"
+USER_AGENTS_DIR = ROOT / "data" / "user_agents"
 CARD_DATA_CSV = ROOT / "data" / "JP_Card_Data.csv"
 DEFAULT_SAMPLE_DECK = SAMPLE_SUBMISSION / "deck.csv"
 VALID_CARD_MIN = 1
@@ -331,3 +332,81 @@ def validate_ai_picks(picks: object, min_count: int, max_count: int, option_coun
     if len(set(picks)) != len(picks):
         raise SelectionError("AI が重複した選択肢を返しました。")
     return picks
+
+
+# ===== 登録AIエージェント（サーバー保存） =====
+# data/user_agents/<id>/ に main.py（.ipynb はコード抽出済み）と meta.json を保存する。
+
+def agent_code_from_upload(filename: str, raw_text: str) -> str:
+    """アップロード内容から main.py 相当のコードを得る（.ipynb はコード抽出）。"""
+    if filename.lower().endswith(".ipynb"):
+        return extract_agent_code_from_ipynb(raw_text)
+    return raw_text
+
+
+def save_user_agent(name: str, filename: str, raw_text: str,
+                    agents_dir: Path | None = None) -> dict:
+    """登録AIをサーバーに保存する。戻り値は meta(id,name,filename,deck_source)。"""
+    name = (name or "登録AI").strip()[:80] or "登録AI"
+    code = agent_code_from_upload(filename or "main.py", raw_text)
+    if "def agent" not in code:
+        raise SelectionError("agent(obs_dict) 関数が見つかりません。main.py 形式のファイルを登録してください。")
+    base = agents_dir or USER_AGENTS_DIR
+    base.mkdir(parents=True, exist_ok=True)
+    ascii_part = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "agent"
+    agent_id = f"{ascii_part[:32]}_{int(time.time() * 1000)}"
+    d = base / agent_id
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "main.py").write_text(code, encoding="utf-8")
+    deck = parse_decklist_comments(code)
+    meta = {"id": agent_id, "name": name, "filename": filename or "main.py",
+            "deck_source": "ファイル内のデッキ" if deck else "対戦時にAIが決定",
+            "deck": deck_card_counts(deck) if deck else None}
+    (d / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return meta
+
+
+def preview_agent_upload(filename: str, raw_text: str) -> dict:
+    """保存せずに、登録予定AIのデッキ内容プレビューを返す（登録前確認用）。"""
+    code = agent_code_from_upload(filename or "main.py", raw_text)
+    if "def agent" not in code:
+        raise SelectionError("agent(obs_dict) 関数が見つかりません。main.py 形式のファイルを登録してください。")
+    deck = parse_decklist_comments(code)
+    return {"filename": filename or "main.py",
+            "deck_source": "ファイル内のデッキ" if deck else "対戦時にAIが決定",
+            "deck": deck_card_counts(deck) if deck else None}
+
+
+def list_user_agents(agents_dir: Path | None = None) -> list[dict]:
+    base = agents_dir or USER_AGENTS_DIR
+    if not base.exists():
+        return []
+    agents: list[dict] = []
+    for d in sorted([p for p in base.iterdir() if p.is_dir()],
+                    key=lambda p: p.stat().st_mtime, reverse=True):
+        meta_path = d / "meta.json"
+        if meta_path.exists():
+            try:
+                agents.append(json.loads(meta_path.read_text(encoding="utf-8")))
+            except json.JSONDecodeError:
+                pass
+    return agents
+
+
+def user_agent_dir(agent_id: str, agents_dir: Path | None = None) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", agent_id or ""):
+        raise SelectionError(f"不明なエージェントです: {agent_id}")
+    base = agents_dir or USER_AGENTS_DIR
+    d = base / agent_id
+    if not (d / "main.py").exists():
+        raise SelectionError(f"登録エージェントが見つかりません: {agent_id}")
+    return d
+
+
+def read_user_agent_code(agent_id: str, agents_dir: Path | None = None) -> str:
+    return (user_agent_dir(agent_id, agents_dir) / "main.py").read_text(encoding="utf-8")
+
+
+def delete_user_agent(agent_id: str, agents_dir: Path | None = None) -> None:
+    import shutil
+    shutil.rmtree(user_agent_dir(agent_id, agents_dir), ignore_errors=True)

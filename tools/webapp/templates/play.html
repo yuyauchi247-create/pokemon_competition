@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}対戦モードを選ぶ | ポケカ{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/'">ホームへ</button>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="crumb"><a href="/">ホーム</a> › 対戦</div>
+  <h2 class="pageTitle">対戦モードを選ぶ</h2>
+  <p class="pageLead">対戦の形式を選んでください。</p>
+  <div class="menuGrid">
+    <a class="menuCard" href="/setup?mode=human">
+      <div class="ico">🎮</div>
+      <div class="ttl">あなた vs AI</div>
+      <div class="sub">自分で操作してAIと対戦</div>
+    </a>
+    <a class="menuCard" href="/setup?mode=pvp">
+      <div class="ico">👥</div>
+      <div class="ttl">人 vs 人</div>
+      <div class="sub">オンラインで他の人と対戦（部屋を作って招待）</div>
+    </a>
+    <a class="menuCard" href="/setup?mode=ai">
+      <div class="ico">🤖</div>
+      <div class="ttl">AI vs AI</div>
+      <div class="sub">AI同士の対戦を観戦（自動再生）</div>
+    </a>
+  </div>
+</div>
+{% endblock %}

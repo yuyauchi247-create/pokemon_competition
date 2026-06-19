@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}AIエージェント登録 | ポケカ{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/'">ホームへ</button>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="crumb"><a href="/">ホーム</a> › AIエージェント登録</div>
+  <h2 class="pageTitle">AIエージェント登録</h2>
+  <p class="pageLead">対戦相手として使うAI（<code>agent(obs_dict)</code> を持つ .py、または Kaggleの .ipynb）を登録します。
+    1ファイルでデッキとAIの両方を読み込みます。登録したAIは「対戦」画面で選べます。</p>
+
+  {% if allow_upload %}
+  <div class="listItem" style="margin-bottom:18px">
+    <h3>＋ 新規登録</h3>
+    <form id="regForm">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:8px">
+        <input id="agentName" type="text" placeholder="表示名（例: メガルカリオAI）" style="border:1px solid var(--line);border-radius:10px;padding:9px;flex:1;min-width:180px">
+        <input id="agentFile" type="file" name="agent_file" accept=".py,.ipynb">
+        <button type="submit">登録する</button>
+      </div>
+      <div id="regMsg" style="margin-top:8px;font-weight:700;font-size:13px"></div>
+    </form>
+  </div>
+  {% else %}
+  <div class="emptyNote" style="margin-bottom:18px">このサーバーではAIエージェントの登録は無効化されています（公開環境向け設定）。</div>
+  {% endif %}
+
+  <div class="sect" style="font-size:12px;color:var(--teal);font-weight:800;margin:8px 0">登録済みエージェント</div>
+  <div id="agentList" class="listGrid"></div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+function rmsg(m='',err=true){const el=document.getElementById('regMsg');if(el){el.textContent=m;el.style.color=err?'#e0556b':'#1f7a44';}}
+function renderAgents(agents){
+  const box=document.getElementById('agentList');
+  if(!agents||!agents.length){box.innerHTML='<div class="emptyNote">登録済みのエージェントはありません。</div>';return;}
+  box.innerHTML=agents.map(a=>`
+    <div class="listItem">
+      <h3>🤖 ${a.name}</h3>
+      <div class="tag">${a.filename||''}<br>デッキ: ${a.deck_source||'-'}</div>
+      <div class="acts"><button class="danger" data-id="${a.id}">削除</button></div>
+    </div>`).join('');
+  box.querySelectorAll('button.danger').forEach(b=>b.onclick=async()=>{
+    if(!confirm('このエージェントを削除しますか？'))return;
+    const r=await fetch('/api/agents/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});
+    const d=await r.json();
+    if(d.error){alert(d.error);return;}
+    refresh();
+  });
+}
+async function refresh(){const d=await get('/api/agents');renderAgents(d.agents||[]);}
+
+function cardsHtml(cards){
+  if(!cards||!cards.length)return '<div class="hint">このAIのデッキはファイルから読み取れませんでした（対戦時にAIが決定します）。</div>';
+  return '<div class="deckCards" style="margin-left:0">'+cards.map(c=>{
+    const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name||('ID'+c.id)}</div>`;
+    return `<div class="miniCard" title="${c.name||''}×${c.count}">${inner}<div class="cnt">×${c.count}</div></div>`;
+  }).join('')+'</div>';
+}
+async function doSave(file,name){
+  const fd=new FormData();fd.append('agent_file',file);fd.append('name',name);
+  const r=await fetch('/api/agents',{method:'POST',body:fd});
+  const d=await r.json();
+  closeModal();
+  if(d.error){rmsg(d.error);return;}
+  rmsg('登録しました: '+d.name,false);
+  document.getElementById('agentName').value='';document.getElementById('agentFile').value='';
+  refresh();
+}
+const regForm=document.getElementById('regForm');
+if(regForm){
+  regForm.onsubmit=async e=>{
+    e.preventDefault();
+    const f=document.getElementById('agentFile').files;
+    if(!f.length){rmsg('ファイルを選択してください。');return;}
+    const file=f[0];
+    const name=document.getElementById('agentName').value||file.name;
+    rmsg('デッキ内容を確認中…',false);
+    // 登録前にデッキ内容をプレビュー
+    const fd=new FormData();fd.append('agent_file',file);
+    const r=await fetch('/api/agents/preview',{method:'POST',body:fd});
+    const info=await r.json();
+    if(info.error){rmsg(info.error);return;}
+    rmsg('');
+    // 確認モーダル
+    document.getElementById('modal').innerHTML=`
+      <h3>このデッキ内容で登録しますか？</h3>
+      <div class="mrow">名前: <b>${name}</b><br>デッキ取得元: ${info.deck_source}</div>
+      ${cardsHtml(info.cards)}
+      <div class="acts">
+        <button id="confirmReg">この内容で登録する</button>
+        <button class="gray" onclick="closeModal()">やめる</button>
+      </div>`;
+    document.getElementById('confirmReg').onclick=()=>doSave(file,name);
+    showModal();
+  };
+}
+refresh();
+</script>
+{% endblock %}

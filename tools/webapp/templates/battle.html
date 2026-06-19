@@ -54,7 +54,9 @@
   #ask{margin-top:12px;}
   .aiControls{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:14px;padding:14px;
     display:flex;align-items:center;gap:18px;flex-wrap:wrap;box-shadow:0 4px 18px #0b346b0a;}
-  .aiControls .speed{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sub);font-weight:700;}
+  .aiControls .speed{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--sub);font-weight:700;}
+  .aiControls button.spd{background:#eaf0f7;color:#46566b;box-shadow:none;padding:6px 12px;}
+  .aiControls button.spd.on{background:var(--blue);color:#fff;}
   .aiDone{font-weight:800;color:var(--teal);}
   .discardGrid{display:flex;flex-wrap:wrap;gap:6px;max-height:340px;overflow:auto;}
   .discardGrid img{width:60px;border-radius:5px;}
@@ -97,8 +99,11 @@
 {% block script %}
 <script>
 let STATE=null, picks=[], dragHand=null, busy=false;
-let aiPlaying=false, aiDelay=700, aiTimer=null;
+let aiPlaying=false, aiDelay=700, aiTimer=null, speedMult=1;
 const GID=new URLSearchParams(location.search).get('gid')||'';
+const TOKEN=localStorage.getItem('pvp_token_'+GID)||'';
+function qs(){return '?gid='+encodeURIComponent(GID)+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');}
+let lastVer=-1, pvpTimer=null;
 const ENE_ICON={GRASS:'🍃',FIRE:'🔥',WATER:'💧',LIGHTNING:'⚡',PSYCHIC:'🔮',FIGHTING:'👊',DARKNESS:'🌙',METAL:'⚙️',DRAGON:'🐉',COLORLESS:'⭐',RAINBOW:'🌈',TEAM_ROCKET:'🚀'};
 const HAND=2, ACTIVE=4, BENCH=5;
 const CTX={
@@ -474,10 +479,12 @@ function pushLog(ev){const body=document.getElementById('logbody');const d=docum
   d.className='ev '+(ev.who||'sys');d.textContent=ev.text;body.appendChild(d);body.scrollTop=body.scrollHeight;}
 function evDelay(ev,total){
   const fast=total>16;
-  if(/カードを引いた|を引いた/.test(ev.text)) return fast?120:300;
-  if(ev.who==='opp') return fast?500:1000;
-  if(ev.who==='sys') return fast?350:650;
-  return fast?180:380;
+  let base;
+  if(/カードを引いた|を引いた/.test(ev.text)) base=fast?120:300;
+  else if(ev.who==='opp') base=fast?500:1000;
+  else if(ev.who==='sys') base=fast?350:650;
+  else base=fast?180:380;
+  return Math.max(40, Math.round(base/speedMult));  // 倍速に応じて短縮
 }
 function playEvents(events){return new Promise(res=>{
   if(!events||!events.length){res();return;}
@@ -503,22 +510,57 @@ async function apply(ns,playback){
 }
 async function submit(p){closeModal();busy=true;
   document.getElementById('ask').innerHTML='<div class="hint">処理中…</div>';
-  const ns=await post('/api/select',{gid:GID,picks:p});await apply(ns,true);}
+  const ns=await post('/api/select',{gid:GID,token:TOKEN,picks:p});
+  if(STATE&&STATE.mode==='pvp'){await applyPvp(ns);busy=false;return;}
+  await apply(ns,true);}
+
+/* ---------- 人 vs 人（オンライン） ---------- */
+function shareUrl(){return location.origin+'/join?gid='+encodeURIComponent(GID);}
+function renderWaiting(ns){
+  document.getElementById('aiControls').classList.add('hidden');
+  const ask=document.getElementById('ask');ask.classList.remove('hidden');
+  ask.innerHTML=`<h2>相手の参加を待っています…</h2>
+    <div class="hint">下のURLを相手に共有してください。相手が参加すると自動で対戦が始まります。</div>
+    <input readonly value="${shareUrl()}" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:10px" onclick="this.select()">
+    <div style="margin-top:8px"><button type="button" id="copyUrl">URLをコピー</button></div>`;
+  const b=document.getElementById('copyUrl');
+  if(b)b.onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(shareUrl());b.textContent='コピーしました';};
+}
+async function applyPvp(ns){
+  if(ns&&ns.status==='waiting'){STATE=ns;renderWaiting(ns);return;}
+  STATE=ns;renderBoard();renderBanner();
+  document.getElementById('aiControls').classList.add('hidden');
+  const ask=document.getElementById('ask');ask.classList.remove('hidden');
+  // 新しい手（ver変化）のときだけログを再生
+  if(ns.ver!==lastVer && ns.events && ns.events.length){
+    lastVer=ns.ver;busy=true;await playEvents(ns.events);busy=false;
+  }else{lastVer=ns.ver;}
+  if(ns.result!==-1){ask.innerHTML='';return;}
+  if(ns.yourTurn){renderAsk();}
+  else{ask.innerHTML='<div class="hint">相手の番です。お待ちください…</div>';}
+}
+async function pvpPoll(){
+  pvpTimer=null;
+  if(STATE&&STATE.result!==-1)return;
+  let ns; try{ns=await get('/api/state'+qs());}catch(e){pvpTimer=setTimeout(pvpPoll,1500);return;}
+  if(ns.status==='waiting'){renderWaiting(ns);pvpTimer=setTimeout(pvpPoll,1500);return;}
+  if(!ns.board){pvpTimer=setTimeout(pvpPoll,1500);return;}
+  await applyPvp(ns);
+  // 自分の手番になったらポーリング停止（操作待ち）。相手の番なら継続。
+  if(ns.result===-1 && !ns.yourTurn) pvpTimer=setTimeout(pvpPoll,1200);
+}
 
 /* ---------- AI vs AI 観戦コントロール ---------- */
 function renderAiControls(){
   const box=document.getElementById('aiControls');
   box.classList.remove('hidden');
   if(STATE.result!==-1){box.innerHTML='<div class="aiDone">対戦終了</div>';return;}
+  const btns=[1,2,3,5,10].map(m=>`<button class="spd${speedMult===m?' on':''}" data-m="${m}">${m}倍速</button>`).join('');
   box.innerHTML=`
     <button id="aiPlayPause">${aiPlaying?'⏸ 一時停止':'▶ 再生'}</button>
-    <label class="speed">速度
-      <input type="range" id="aiSpeed" min="200" max="2000" step="100" value="${aiDelay}">
-      <span id="aiSpeedVal">${(aiDelay/1000).toFixed(1)}秒/手</span>
-    </label>`;
+    <span class="speed">速度: ${btns}</span>`;
   document.getElementById('aiPlayPause').onclick=toggleAiPlay;
-  document.getElementById('aiSpeed').oninput=e=>{aiDelay=+e.target.value;
-    document.getElementById('aiSpeedVal').textContent=(aiDelay/1000).toFixed(1)+'秒/手';};
+  box.querySelectorAll('button.spd').forEach(b=>b.onclick=()=>{speedMult=+b.dataset.m;renderAiControls();});
 }
 function toggleAiPlay(){
   aiPlaying=!aiPlaying;
@@ -528,10 +570,10 @@ function toggleAiPlay(){
 }
 async function aiLoop(){
   if(!aiPlaying||!STATE||STATE.result!==-1){aiPlaying=false;renderAiControls();return;}
-  const ns=await post('/api/step',{gid:GID});
+  const ns=await post('/api/step',{gid:GID,token:TOKEN});
   if(ns.error){aiPlaying=false;pushLog({who:'sys',text:'エラー: '+ns.error});renderAiControls();return;}
   await apply(ns,true);
-  if(aiPlaying&&STATE.result===-1) aiTimer=setTimeout(aiLoop,aiDelay);
+  if(aiPlaying&&STATE.result===-1) aiTimer=setTimeout(aiLoop, Math.max(60, aiDelay/speedMult));
   else{aiPlaying=false;renderAiControls();}
 }
 
@@ -540,13 +582,22 @@ function showNoGame(){
   document.querySelector('.handzone').classList.add('hidden');
   const ng=document.getElementById('noGame');
   ng.classList.remove('hidden');
-  ng.innerHTML='対戦がまだ開始されていません。<br><a href="/">相手・デッキ選択画面</a>から対戦を始めてください。';
+  ng.innerHTML='対戦がまだ開始されていません。<br><a href="/play">対戦メニュー</a>から対戦を始めてください。';
 }
 
 /* ---------- 初期化 ---------- */
 (async ()=>{
   if(!GID){showNoGame();return;}
-  const st=await get('/api/state?gid='+encodeURIComponent(GID));
+  const st=await get('/api/state'+qs());
+  // 人 vs 人（オンライン）
+  if(st.mode==='pvp'){
+    document.getElementById('logbody').innerHTML='';
+    if(st.status==='waiting'){renderWaiting(st);pvpTimer=setTimeout(pvpPoll,1500);return;}
+    pushLog({who:'sys',text:'―― 対戦開始 ――'});
+    await applyPvp(st);
+    if(st.result===-1 && !st.yourTurn) pvpTimer=setTimeout(pvpPoll,1200);
+    return;
+  }
   if(!st||!st.board){showNoGame();return;}
   document.getElementById('logbody').innerHTML='';
   pushLog({who:'sys',text:'―― 対戦開始 ――'});

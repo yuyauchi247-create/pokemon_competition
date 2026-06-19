@@ -2,7 +2,7 @@
 {% block title %}デッキ作成 | ポケカ 人 vs AI{% endblock %}
 
 {% block nav %}
-<button type="button" class="gray" onclick="location.href='/'">選択画面へ戻る</button>
+<button type="button" class="gray" onclick="location.href='/decks'">デッキ一覧へ戻る</button>
 {% endblock %}
 
 {% block content %}
@@ -13,7 +13,7 @@
         <h2>デッキ作成</h2>
         <p>PDFの使用可能カード（ID 1〜1267）だけから60枚デッキを作成して保存します。</p>
       </div>
-      <button type="button" id="closeBuilderBtn" class="gray">選択画面へ戻る</button>
+      <button type="button" id="closeBuilderBtn" class="gray">デッキ一覧へ戻る</button>
     </div>
     <div class="builderTools">
       <input id="deckNameInput" type="text" placeholder="デッキ名（例: わたしの炎デッキ）">
@@ -131,11 +131,11 @@ async function saveBuilderDeck(){
   const r=await post('/api/user_decks',{name,cards:CURRENT_DECK});
   if(r.error){builderMessage(r.error);return;}
   // 保存したら選択画面に戻り、そのデッキを選択状態にする
-  location.href='/?saved='+encodeURIComponent(r.id);
+  location.href='/decks';
 }
 
 ['cardSearch','cardTypeFilter','energyFilter'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
-document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/';};
+document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/decks';};
 document.getElementById('saveDeckBtn').onclick=saveBuilderDeck;
 
 document.getElementById('cardLibrary').innerHTML='<div class="hint">カード一覧を読み込み中…</div>';

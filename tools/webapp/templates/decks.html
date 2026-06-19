@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}デッキ一覧 | ポケカ{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/'">ホームへ</button>
+{% endblock %}
+
+{% block head %}
+<style>
+  .deckGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+  .deckTile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 4px 16px #0b346b0d;}
+  .deckTile h3{margin:0 0 2px;font-size:15px;color:var(--ink);}
+  .deckTile .desc{font-size:12px;color:var(--sub);margin-bottom:8px;min-height:16px;}
+  .deckTile .cards{display:flex;flex-wrap:wrap;gap:5px;}
+  .deckTile .sect{font-size:11px;color:var(--teal);font-weight:800;margin:18px 0 8px;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="crumb"><a href="/">ホーム</a> › デッキ作成</div>
+  <div class="pageHead">
+    <h2 class="pageTitle">デッキ一覧</h2>
+    <button onclick="location.href='/builder'">＋ 新しいデッキを作成</button>
+  </div>
+
+  <div class="sect">あなたの保存済みデッキ</div>
+  <div id="userDecks" class="deckGrid"></div>
+
+  <div class="sect">サンプルデッキ</div>
+  <div id="sampleDecks" class="deckGrid"></div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+function deckCardsHtml(cards){
+  return (cards||[]).map(c=>{
+    const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name||('ID'+c.id)}</div>`;
+    return `<div class="miniCard" title="${c.name||''}（ID:${c.id}）×${c.count}">${inner}<div class="cnt">×${c.count}</div></div>`;
+  }).join('');
+}
+function renderDecks(boxId, decks, opts){
+  const box=document.getElementById(boxId);
+  if(!decks||!decks.length){box.innerHTML='<div class="emptyNote">'+(opts.empty||'デッキがありません。')+'</div>';return;}
+  box.innerHTML=decks.map(d=>`
+    <div class="deckTile">
+      <h3>${d.name}</h3>
+      <div class="desc">${d.desc||''}</div>
+      <div class="cards">${deckCardsHtml(d.cards)}</div>
+    </div>`).join('');
+}
+get('/api/config').then(c=>{
+  renderDecks('userDecks', c.userDecks||[], {empty:'保存済みデッキはまだありません。「＋ 新しいデッキを作成」から作れます。'});
+  renderDecks('sampleDecks', c.sampleDecks||[], {empty:'サンプルデッキがありません。'});
+});
+</script>
+{% endblock %}

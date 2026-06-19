@@ -22,3 +22,16 @@ data/kaggle_raw/
 data/user_decks/*.csv
 data/user_decks/*.json
 !data/user_decks/.gitkeep
+
+# 登録AIエージェント（ローカル保存・実行コード）
+data/user_agents/
+
+# 対戦ログ
+data/logs/
+
+# 第三者のKaggle notebook（再取得可能・他者の著作物。リポジトリには含めない）
+data/reference/kaggle_notebooks/
+
+# ローカル個人設定・作業メモ
+.claude/settings.local.json
+prompt.txt
