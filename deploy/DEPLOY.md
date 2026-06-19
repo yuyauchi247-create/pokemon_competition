@@ -206,6 +206,28 @@ gh secret set LIGHTSAIL_SSH_KEY < ~/.ssh/pokeca_deploy
 
 ---
 
+## Basic 認証（サイト全体にパスワード）
+
+Caddy の `basic_auth` でサイト全体を保護している。資格情報は git に含めず、
+VPS 上の `/opt/pokeca/.env.caddy`（git 管理外・CI の rsync 対象外）で与える。
+
+1. bcrypt ハッシュを生成（ローカル or VPS。平文はどこにも保存しない）:
+   ```bash
+   docker run --rm caddy:2 caddy hash-password --plaintext 'パスワード'
+   ```
+2. VPS に `/opt/pokeca/.env.caddy` を作成:
+   ```
+   BASIC_AUTH_USER=admin
+   BASIC_AUTH_HASH=$$2a$$14$$............
+   ```
+   > 重要: Docker Compose は env_file の値も補間するため、bcrypt ハッシュ内の
+   > `$` は必ず `$$` に二重化する（しないと `$2a` 等が変数扱いされ空になる）。
+3. 反映: `docker compose -f compose.prod.yaml up -d`
+4. 確認: `curl -o /dev/null -w "%{http_code}\n" https://mypokeca.com/` が `401`、
+   `-u admin:パスワード` 付きで `200` なら成功。
+
+パスワードを変えるときは手順1でハッシュを作り直し、`.env.caddy` を更新して再 up。
+
 ## 運用メモ
 
 - **data/ の参照データ(CSV 等)を更新したとき**: CI は data/ を同期しないので、

@@ -35,6 +35,8 @@ jobs:
             -e "ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=yes" \
             --exclude='.git' \
             --exclude='data' \
+            --exclude='.env.caddy' \
+            --exclude='.env' \
             --exclude='.venv' \
             --exclude='__pycache__' \
             --exclude='*.pyc' \

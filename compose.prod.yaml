@@ -50,6 +50,11 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    # Basic 認証の資格情報（BASIC_AUTH_USER / BASIC_AUTH_HASH）を注入。
+    # このファイルは git 管理外で VPS 上にのみ存在する。無ければ Caddy は起動しない
+    # ため、本番では必ず /opt/pokeca/.env.caddy を用意すること。
+    env_file:
+      - ./.env.caddy
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
