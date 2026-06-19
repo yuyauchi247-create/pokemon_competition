@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}総当たり戦 | ポケカ{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/'">ホームへ</button>
+{% endblock %}
+
+{% block head %}
+<style>
+  .tbl{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  .tbl th,.tbl td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:center;font-size:13px;}
+  .tbl th{background:#f1f7ff;color:var(--ink);font-weight:800;}
+  .tbl td.name{text-align:left;font-weight:700;}
+  .tbl tr:nth-child(2) td{background:#fffdf0;}
+  .rank{font-weight:800;color:var(--teal);}
+  .matrix{margin-top:24px;overflow:auto;}
+  .matrix td.win{background:#e8f6ee;color:#1f7a44;font-weight:800;}
+  .matrix td.lose{background:#ffeef0;color:#9b2a3a;}
+  .matrix td.self{background:#eef2f7;color:#9fb0c4;}
+  .sect{font-size:14px;color:var(--teal);font-weight:800;margin:22px 0 10px;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="crumb"><a href="/">ホーム</a> › 総当たり戦</div>
+  <div class="pageHead">
+    <h2 class="pageTitle">総当たり戦（AI vs AI）</h2>
+    <button id="runBtn">総当たりを実行</button>
+  </div>
+  <p class="pageLead">登録済みのAIエージェント全員で総当たり（各ペアを先攻/後攻で2試合ずつ）を実行し、勝敗を集計します。</p>
+  <div id="msg" class="hint"></div>
+  <div id="result"></div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+function setMsg(m=''){document.getElementById('msg').textContent=m;}
+async function loadAgents(){
+  const d=await get('/api/agents');
+  const n=(d.agents||[]).length;
+  setMsg(n<2?`登録AIが${n}体です。総当たりには2体以上必要です（AIエージェント登録から追加してください）。`
+            :`登録AI ${n}体: ${d.agents.map(a=>a.name).join('、')}`);
+  document.getElementById('runBtn').disabled = n<2;
+}
+function renderResult(d){
+  const names=d.standings.map(s=>s.name);
+  // 順位表
+  let html='<div class="sect">順位表</div><table class="tbl"><tr><th>順位</th><th>AI</th><th>勝</th><th>敗</th><th>分</th><th>試合</th><th>勝率</th></tr>';
+  d.standings.forEach((s,i)=>{html+=`<tr><td class="rank">${i+1}</td><td class="name">${s.name}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.draws}</td><td>${s.games}</td><td>${s.winRate}%</td></tr>`;});
+  html+='</table>';
+  // 対戦表（行=先攻 p0、列=後攻 p1、各セルに勝者）
+  const key={};d.matches.forEach(m=>key[m.p0+''+m.p1]=m);
+  html+='<div class="sect">対戦結果（行が先攻）</div><div class="matrix"><table class="tbl"><tr><th>先攻＼後攻</th>'+names.map(n=>`<th>${n}</th>`).join('')+'</tr>';
+  names.forEach(r=>{
+    html+=`<tr><td class="name">${r}</td>`;
+    names.forEach(c=>{
+      if(r===c){html+='<td class="self">―</td>';return;}
+      const m=key[r+''+c];
+      if(!m){html+='<td>-</td>';return;}
+      const cls=m.result===0?'win':(m.result===1?'lose':'');
+      const mark=m.result===0?'勝':(m.result===1?'敗':'分');
+      html+=`<td class="${cls}" title="${m.winner}">${mark}</td>`;
+    });
+    html+='</tr>';
+  });
+  html+='</table></div>';
+  document.getElementById('result').innerHTML=html;
+}
+document.getElementById('runBtn').onclick=async()=>{
+  document.getElementById('runBtn').disabled=true;
+  setMsg('総当たりを実行中…（対戦数によっては時間がかかります）');
+  document.getElementById('result').innerHTML='';
+  try{
+    const d=await post('/api/tournament',{});
+    if(d.error){setMsg(d.error);}
+    else{setMsg(`完了: ${d.n}体・${d.matches.length}試合`);renderResult(d);}
+  }catch(e){setMsg('エラー: '+e);}
+  document.getElementById('runBtn').disabled=false;
+};
+loadAgents();
+</script>
+{% endblock %}

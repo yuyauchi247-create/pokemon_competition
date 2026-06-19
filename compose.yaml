@@ -1,0 +1,21 @@
+services:
+  webapp:
+    build: .
+    # 配布 libcg.so が Linux x86-64 専用のため amd64 を強制
+    platform: linux/amd64
+    ports:
+      - "8000:5000"
+    environment:
+      POKECA_WEBAPP_HOST: "0.0.0.0"
+      POKECA_WEBAPP_PORT: "5000"
+    volumes:
+      # デッキ作成画面で保存したデッキを再ビルド後も残す
+      - ./data/user_decks:/app/data/user_decks
+      # 登録したAIエージェントを残す
+      - ./data/user_agents:/app/data/user_agents
+      # 対戦ログ（対戦ごとに1ファイル）をホストに残す
+      - ./data/logs:/app/data/logs
+    # コンテナを作り直さずコード変更を反映したい場合は以下を有効化
+    # volumes:
+    #   - ./tools:/app/tools
+    #   - ./data:/app/data

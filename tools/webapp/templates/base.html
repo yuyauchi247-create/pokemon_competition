@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}ポケカ 人 vs AI{% endblock %}</title>
+<style>
+  :root{
+    --bg:#f3f7fb; --panel:#ffffff; --line:#e4ebf2; --ink:#1f2a3a; --sub:#6b7a90;
+    --teal:#0ea5b7; --blue:#3b82f6; --soft:#eef4fb;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:system-ui,"Segoe UI","Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;
+       background:linear-gradient(180deg,#eef5fb,#f6f9fc);color:var(--ink);}
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;background:var(--panel);
+         border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;box-shadow:0 1px 6px #0b346b0d;}
+  header h1{font-size:16px;margin:0;color:var(--teal);font-weight:800;letter-spacing:.02em;}
+  header h1 a{color:inherit;text-decoration:none;}
+  button{cursor:pointer;border:none;border-radius:10px;padding:9px 16px;font-size:14px;font-weight:600;
+         background:var(--blue);color:#fff;transition:.15s;box-shadow:0 2px 6px #3b82f633;}
+  button:hover{filter:brightness(1.05);transform:translateY(-1px);}
+  button.gray{background:#eaf0f7;color:#46566b;box-shadow:none;}
+  button:disabled{opacity:.45;cursor:default;transform:none;}
+  .wrap{display:grid;grid-template-columns:1fr 300px;gap:14px;max-width:1120px;margin:0 auto;padding:14px;}
+  @media(max-width:860px){.wrap{grid-template-columns:1fr;}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 14px;
+         margin-bottom:12px;box-shadow:0 4px 18px #0b346b0a;}
+  .panel h2{margin:0 0 10px;font-size:12px;color:var(--sub);font-weight:700;letter-spacing:.04em;}
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;}
+  .field{min-height:120px;border-radius:12px;padding:6px;transition:.15s;}
+  .field.dropok{background:var(--soft);outline:2px dashed var(--blue);}
+  .meta{font-size:12px;color:var(--sub);margin-left:auto;text-align:right;line-height:1.5;}
+
+  .pcard{width:102px;border-radius:12px;background:#fff;border:1px solid var(--line);
+         box-shadow:0 3px 10px #0b346b14;cursor:pointer;overflow:hidden;transition:.15s;position:relative;}
+  .pcard:hover{transform:translateY(-4px);box-shadow:0 8px 20px #0b346b22;}
+  .pcard.active{border-color:var(--teal);box-shadow:0 0 0 2px var(--teal)55,0 6px 16px #0b346b1f;}
+  .pcard.drop{outline:2px dashed var(--blue);outline-offset:2px;}
+  .pcard.dragging{opacity:.45;}
+  .pcard .bar{height:6px;}
+  .pcard .bd{padding:6px 7px;}
+  .pcard .nm{font-size:12px;font-weight:700;line-height:1.2;min-height:29px;color:var(--ink);}
+  .pcard .art{height:54px;border-radius:8px;margin:3px 0;display:flex;align-items:center;justify-content:center;font-size:22px;overflow:hidden;}
+  /* 画像カード：カード全体を表示（トリミングなし） */
+  .pcard.imgcard{width:104px;padding:0;background:#fff;overflow:hidden;}
+  .pcard.imgcard .full{width:100%;display:block;}
+  .pcard.imgcard.active{outline:3px solid var(--teal);outline-offset:0;}
+  .ov{position:absolute;left:0;right:0;bottom:0;background:#0b1830e0;color:#fff;padding:3px 5px;}
+  .ovln{display:flex;justify-content:space-between;font-size:10px;font-weight:700;line-height:1.2;}
+  .ovene{color:#ffd84a;letter-spacing:1px;}
+  .ov .hpbar{height:4px;background:#ffffff2e;margin-top:2px;border-radius:2px;}
+  .ov .hpbar>i{display:block;height:100%;background:#2fd06e;}
+  .pcard .ln{display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#46566b;}
+  .pcard .badge{position:absolute;top:8px;right:5px;font-size:9px;font-weight:800;background:#ffffffd9;
+                color:#b8860b;border-radius:5px;padding:1px 4px;border:1px solid #0001;}
+  .hpbar{height:5px;border-radius:3px;background:#eef0f4;margin-top:3px;overflow:hidden;}
+  .hpbar>i{display:block;height:100%;background:linear-gradient(90deg,#22c55e,#16a34a);}
+  .ene{font-size:12px;color:#d97706;font-weight:800;margin-top:3px;min-height:15px;letter-spacing:1px;}
+  .enei{display:inline-block;letter-spacing:0;line-height:1;white-space:nowrap;}
+  .empty-c{width:102px;height:118px;border-radius:12px;border:2px dashed #cfdbe8;display:flex;
+           align-items:center;justify-content:center;font-size:12px;color:#9fb0c4;}
+  /* タイプ色 */
+  .c-GRASS{background:#7bc86c}.c-FIRE{background:#ff7a59}.c-WATER{background:#4aa8ff}.c-LIGHTNING{background:#f6c945}
+  .c-PSYCHIC{background:#b07cf0}.c-FIGHTING{background:#d98a4a}.c-DARKNESS{background:#5b6478}.c-METAL{background:#9aa7bd}
+  .c-DRAGON{background:#d9b441}.c-COLORLESS{background:#c9d3e0}
+  .a-GRASS{background:#eaf6e6}.a-FIRE{background:#ffeae3}.a-WATER{background:#e3f1ff}.a-LIGHTNING{background:#fff7db}
+  .a-PSYCHIC{background:#f3e9ff}.a-FIGHTING{background:#fbeada}.a-DARKNESS{background:#e7eaf0}.a-METAL{background:#eef1f6}
+  .a-DRAGON{background:#fbf2d4}.a-COLORLESS{background:#eef2f7}
+
+  #ask{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--teal);
+       border-radius:14px;padding:14px;min-height:56px;box-shadow:0 4px 18px #0b346b0a;}
+  #ask h2{margin:0 0 6px;font-size:15px;color:var(--teal);font-weight:800;}
+  .hint{font-size:13px;color:var(--sub);margin:2px 0 10px;}
+  .opts{display:flex;flex-wrap:wrap;gap:8px;}
+  .opt{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 14px;
+       font-size:14px;cursor:pointer;color:var(--ink);font-weight:600;}
+  .opt:hover{background:#e2edf9;} .opt.sel{background:var(--blue);color:#fff;}
+  .opt.optcard{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;width:96px;}
+  .opt.optcard img{width:84px;border-radius:7px;display:block;}
+  .opt.optcard span{font-size:11px;font-weight:700;line-height:1.2;text-align:center;}
+  details{margin-top:10px;} summary{cursor:pointer;color:var(--sub);font-size:12px;}
+
+  #log{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 14px;
+       height:560px;display:flex;flex-direction:column;box-shadow:0 4px 18px #0b346b0a;}
+  #log h2{margin:0 0 8px;font-size:12px;color:var(--sub);font-weight:700;}
+  #logbody{overflow-y:auto;flex:1;font-size:12px;line-height:1.5;padding-right:4px;}
+  .ev{padding:5px 8px;border-radius:8px;margin-bottom:4px;animation:fade .3s;}
+  .ev.opp{background:#ffeef0;color:#9b2a3a;} .ev.you{background:#e8f6ee;color:#1f7a44;}
+  .ev.sys{color:var(--sub);font-weight:700;text-align:center;background:#f2f5f9;}
+  @keyframes fade{from{opacity:0;transform:translateX(8px);}to{opacity:1;}}
+
+  #banner{text-align:center;font-size:22px;font-weight:800;padding:16px;border-radius:14px;
+          background:var(--panel);border:1px solid var(--line);margin-bottom:12px;display:none;box-shadow:0 4px 18px #0b346b0a;}
+  .win{color:#16a34a}.lose{color:#e0556b}.draw{color:#d97706}
+
+  #overlay{position:fixed;inset:0;background:#1f2a3a55;backdrop-filter:blur(2px);display:none;
+           align-items:center;justify-content:center;z-index:20;}
+  #modal{background:#fff;border:1px solid var(--line);border-radius:16px;max-width:460px;width:92%;
+         padding:18px;box-shadow:0 20px 50px #0b346b33;}
+  #modal .mtype{display:inline-block;font-size:12px;padding:3px 10px;border-radius:12px;color:#10131f;font-weight:800;}
+  #modal h3{margin:8px 0;font-size:19px;}
+  #modal .cardimg{display:block;width:230px;max-width:70%;margin:8px auto;border-radius:10px;box-shadow:0 4px 14px #0b346b33;}
+  #modal .mv{background:var(--soft);border-radius:10px;padding:9px 11px;margin:7px 0;font-size:13px;}
+  #modal .mv b{color:var(--teal);} #modal .mrow{font-size:13px;color:#46566b;margin:3px 0;}
+  #modal .mvatk{display:block;width:100%;text-align:left;margin:7px 0;padding:10px 12px;font-size:13px;
+                font-weight:400;background:#e7f0ff;color:var(--ink);border:1px solid #cfe0fb;box-shadow:none;}
+  #modal .mvatk:hover:not([disabled]){background:#d4e6ff;transform:none;}
+  #modal .mvatk b{color:var(--teal);font-size:14px;} #modal .mvatk .mrow{color:#5a6a80;}
+  #modal .mvatk[disabled]{background:#f0f2f6;color:#9aa7b8;opacity:1;cursor:default;}
+  #modal .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+  .setup{max-width:860px;margin:18px auto;padding:0 14px;}
+  .setup .hero{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;
+               box-shadow:0 8px 28px #0b346b12;}
+  .setup h2{margin:0 0 6px;color:var(--teal);font-size:22px;}
+  .setup p{margin:0 0 14px;color:var(--sub);line-height:1.6;font-size:14px;}
+  .choice{border:1px solid var(--line);border-radius:14px;padding:13px;margin:10px 0;background:#fbfdff;}
+  .choice h3{margin:0 0 8px;font-size:14px;color:var(--ink);}
+  .choice label{display:block;margin:8px 0;font-weight:700;color:#34445a;}
+  .choice small{display:block;margin-left:24px;color:var(--sub);font-weight:500;line-height:1.5;}
+  .oppDeckChoice{margin:6px 0 10px 24px;padding:10px 12px;border-left:3px solid var(--line);background:#f7fafd;border-radius:0 10px 10px 0;}
+  .oppDeckChoice h4{margin:0 0 6px;font-size:13px;color:var(--ink);}
+  .oppDeckChoice.disabled{opacity:.45;pointer-events:none;}
+  input[type="file"], input[type="number"]{display:block;margin:8px 0 0 24px;max-width:100%;}
+  #setupMsg{margin-top:10px;color:#e0556b;font-weight:700;white-space:pre-wrap;}
+  .hidden{display:none!important;}
+  /* サンプルデッキ選択 */
+  .deckList{display:flex;flex-direction:column;gap:10px;margin:10px 0 0 0;}
+  .deckCard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fbfdff;
+            cursor:pointer;transition:.15s;}
+  .deckCard:hover{background:#f1f7ff;}
+  .deckCard.sel{border-color:var(--teal);box-shadow:0 0 0 2px #0ea5b755;background:#f0fbfc;}
+  .deckCard .dkhd{display:flex;align-items:center;gap:8px;}
+  .deckCard .dkhd input{margin:0;}
+  .deckCard .dknm{font-weight:800;color:var(--ink);font-size:14px;}
+  .deckCard .dkdesc{color:var(--sub);font-size:12px;margin:2px 0 0 24px;}
+  .deckCards{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0 24px;}
+  .miniCard{width:64px;border-radius:7px;overflow:hidden;background:#fff;border:1px solid var(--line);
+            position:relative;box-shadow:0 2px 6px #0b346b14;}
+  .miniCard img{width:100%;display:block;}
+  .miniCard .ph{height:88px;display:flex;align-items:center;justify-content:center;font-size:9px;
+                color:#9fb0c4;text-align:center;padding:2px;background:#eef2f7;line-height:1.2;}
+  .miniCard .cnt{position:absolute;left:0;bottom:0;right:0;background:#0b1830d9;color:#fff;
+                 font-size:10px;font-weight:800;text-align:center;padding:1px 0;}
+  .miniCard .cid{position:absolute;top:0;right:0;background:#ffffffcc;color:#46566b;font-size:8px;
+                 font-weight:700;padding:0 3px;border-bottom-left-radius:5px;}
+  /* デッキ作成 */
+  .builder{max-width:1260px;margin:18px auto;padding:0 14px;}
+  .builder .hero{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 8px 28px #0b346b12;}
+  .builderHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;}
+  .builder h2{margin:0;color:var(--teal);font-size:22px}.builder p{margin:4px 0 12px;color:var(--sub);font-size:14px;}
+  .builderTools{display:grid;grid-template-columns:1.2fr 1fr 160px 150px;gap:8px;margin:8px 0 14px;}
+  .builderTools input,.builderTools select{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff;min-width:0;}
+  .builderGrid{display:grid;grid-template-columns:1fr 360px;gap:14px;align-items:start;}
+  .builderGrid h3{margin:0 0 8px;font-size:14px;color:var(--ink);}
+  .cardLibrary{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:8px;max-height:680px;overflow:auto;padding-right:4px;}
+  .libCard{border:1px solid var(--line);border-radius:9px;background:#fff;position:relative;overflow:hidden;cursor:pointer;box-shadow:0 2px 7px #0b346b10;}
+  .libCard:hover{outline:2px solid var(--blue);}.libCard.disabled{opacity:.4;cursor:not-allowed;}.libCard.disabled:hover{outline:none;}.libCard img{width:100%;display:block;}.libCard .ph{height:112px;font-size:10px;color:#789;text-align:center;padding:20px 4px;background:#eef2f7;}
+  .libCard .cid,.deckLine .cid{position:absolute;top:0;right:0;background:#ffffffd9;font-size:9px;padding:1px 4px;border-bottom-left-radius:5px;font-weight:800;}
+  .libCard .nm{font-size:10px;line-height:1.15;padding:3px 4px;min-height:26px;font-weight:700;}.libCard .have{position:absolute;left:0;bottom:0;background:#0b1830d9;color:#fff;font-size:11px;font-weight:800;padding:1px 5px;border-top-right-radius:5px;}.libCard .have.maxed{background:#e0556b;}
+  .deckBox{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fbfdff;position:sticky;top:68px;}
+  #deckCount{float:right;color:var(--teal)}#builderMsg{color:#e0556b;font-size:12px;font-weight:700;min-height:18px;margin-bottom:6px;white-space:pre-wrap;}
+  .builderDeck{display:flex;flex-direction:column;gap:5px;max-height:560px;overflow:auto;margin-bottom:10px;}
+  .deckLine{display:grid;grid-template-columns:38px 1fr auto auto;gap:7px;align-items:center;border:1px solid var(--line);border-radius:9px;background:#fff;padding:4px;position:relative;}
+  .deckLine img{width:38px;border-radius:4px}.deckLine .ph{width:38px;height:52px;background:#eef2f7;border-radius:4px}.deckLine .nm{font-size:12px;font-weight:800;line-height:1.2}.deckLine .sub{font-size:10px;color:var(--sub)}
+  .deckLine button{padding:4px 8px;border-radius:7px;box-shadow:none;}.deckLine button.minus{background:#eaf0f7;color:#46566b;}
+  @media(max-width:920px){.builderTools,.builderGrid{grid-template-columns:1fr}.deckBox{position:static}.cardLibrary{max-height:420px}}
+  /* ホーム/メニュー */
+  .page{max-width:980px;margin:22px auto;padding:0 16px;}
+  .page h2.pageTitle{color:var(--teal);font-size:24px;margin:0 0 4px;}
+  .page p.pageLead{color:var(--sub);font-size:14px;margin:0 0 18px;line-height:1.6;}
+  .menuGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;}
+  .menuCard{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;
+            text-decoration:none;color:inherit;background:var(--panel);border:1px solid var(--line);
+            border-radius:18px;padding:30px 18px;box-shadow:0 6px 20px #0b346b10;transition:.15s;cursor:pointer;}
+  .menuCard:hover{transform:translateY(-3px);border-color:var(--teal);box-shadow:0 12px 28px #0b346b1f;}
+  .menuCard .ico{font-size:46px;line-height:1;}
+  .menuCard .ttl{font-size:18px;font-weight:800;color:var(--ink);}
+  .menuCard .sub{font-size:12px;color:var(--sub);line-height:1.5;}
+  .pageHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 16px;flex-wrap:wrap;}
+  .pageHead h2{margin:0;}
+  .crumb{font-size:12px;color:var(--sub);margin-bottom:10px;}
+  .crumb a{color:var(--teal);text-decoration:none;}
+  /* 一覧カード（デッキ/エージェント） */
+  .listGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
+  .listItem{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 4px 16px #0b346b0d;}
+  .listItem h3{margin:0 0 4px;font-size:15px;color:var(--ink);}
+  .listItem .tag{font-size:11px;color:var(--sub);}
+  .listItem .acts{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;}
+  .listItem button.danger{background:#fdecee;color:#c0344a;box-shadow:none;}
+  .emptyNote{color:var(--sub);font-size:14px;padding:20px;text-align:center;border:1px dashed var(--line);border-radius:14px;}
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+<header>
+  <h1><a href="/">⚡ ポケカ 人 vs AI</a></h1>
+  {% block nav %}{% endblock %}
+  <span class="meta" id="turnInfo"></span>
+</header>
+
+{% block content %}{% endblock %}
+
+<div id="overlay"><div id="modal"></div></div>
+
+<script>
+/* ---------- 全画面共通のユーティリティ ---------- */
+const ICON={GRASS:'🍃',FIRE:'🔥',WATER:'💧',LIGHTNING:'⚡',PSYCHIC:'🔮',FIGHTING:'👊',DARKNESS:'🌙',METAL:'⚙️',DRAGON:'🐉',COLORLESS:'⭐'};
+async function post(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});return r.json();}
+async function postForm(u,formData){const r=await fetch(u,{method:'POST',body:formData});return r.json();}
+async function get(u){const r=await fetch(u);return r.json();}
+function showModal(){document.getElementById('overlay').style.display='flex';}
+function closeModal(){document.getElementById('overlay').style.display='none';}
+document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')closeModal();};
+</script>
+{% block script %}{% endblock %}
+</body>
+</html>

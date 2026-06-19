@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}デッキ作成 | ポケカ 人 vs AI{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/decks'">デッキ一覧へ戻る</button>
+{% endblock %}
+
+{% block content %}
+<div id="builder" class="builder">
+  <div class="hero">
+    <div class="builderHead">
+      <div>
+        <h2>デッキ作成</h2>
+        <p>PDFの使用可能カード（ID 1〜1267）だけから60枚デッキを作成して保存します。</p>
+      </div>
+      <button type="button" id="closeBuilderBtn" class="gray">デッキ一覧へ戻る</button>
+    </div>
+    <div class="builderTools">
+      <input id="deckNameInput" type="text" placeholder="デッキ名（例: わたしの炎デッキ）">
+      <input id="cardSearch" type="search" placeholder="カード名・IDで検索">
+      <select id="cardTypeFilter"><option value="">すべて</option><option>POKEMON</option><option>ITEM</option><option>SUPPORTER</option><option>STADIUM</option><option>TOOL</option><option>BASIC_ENERGY</option><option>SPECIAL_ENERGY</option></select>
+      <select id="energyFilter"><option value="">全タイプ</option><option>GRASS</option><option>FIRE</option><option>WATER</option><option>LIGHTNING</option><option>PSYCHIC</option><option>FIGHTING</option><option>DARKNESS</option><option>METAL</option><option>COLORLESS</option></select>
+    </div>
+    <div class="builderGrid">
+      <div class="library"><h3>カード一覧</h3><div id="cardLibrary" class="cardLibrary"></div></div>
+      <div class="deckBox"><h3>作成中デッキ <span id="deckCount">0/60</span></h3><div id="builderMsg"></div><div id="builderDeck" class="builderDeck"></div><button type="button" id="saveDeckBtn">このデッキを保存</button></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+let ALL_CARDS=[], CURRENT_DECK=[];
+const BASIC_ENERGY=new Set([1,2,3,4,5,6,7,8]);
+const ACE_SPEC_IDS=new Set([10,12,13,1080,1082,1085,1088,1089,1092,1093,1095,1096,1100,1104,1107,1109,1110,1111,1125,1126,1128,1155,1158,1159,1165,1167,1169,1247,1249]);
+
+function cardById(id){return ALL_CARDS.find(c=>c.id===id)||{id,name:'ID:'+id,cardType:'UNKNOWN'};}
+function deckCounts(){const m={};CURRENT_DECK.forEach(id=>m[id]=(m[id]||0)+1);return m;}
+function deckHasAceSpec(){return CURRENT_DECK.some(id=>ACE_SPEC_IDS.has(id));}
+function deckHasSeed(){return CURRENT_DECK.some(id=>{const c=cardById(id);return c.stage&&c.stage.includes('たね');});}
+function deckWarnings(){
+  const w=[];
+  if(CURRENT_DECK.length===60&&!deckHasSeed())w.push('⚠ たねポケモンが入っていません（必須）');
+  return w.join('\n');
+}
+function renderCardLibrary(){
+  const q=(document.getElementById('cardSearch').value||'').toLowerCase().trim();
+  const ct=document.getElementById('cardTypeFilter').value;
+  const et=document.getElementById('energyFilter').value;
+  const counts=deckCounts();
+  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et));
+  document.getElementById('cardLibrary').innerHTML=cards.map(c=>{
+    const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name}</div>`;
+    const cnt=counts[c.id]||0;
+    const maxed=(!BASIC_ENERGY.has(c.id)&&cnt>=4)||(ACE_SPEC_IDS.has(c.id)&&(cnt>=1||deckHasAceSpec()));
+    const have=cnt?`<div class="have${maxed?' maxed':''}">×${cnt}</div>`:'';
+    return `<div class="libCard${maxed?' disabled':''}" data-id="${c.id}" title="${c.name} ID:${c.id}">${inner}<div class="cid">ID:${c.id}</div>${have}<div class="nm">${c.name}</div></div>`;
+  }).join('')||'<div class="hint">該当カードがありません</div>';
+  document.querySelectorAll('#cardLibrary .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id));
+}
+async function openBuilderCard(cid){
+  const c=await get('/api/card/'+cid);
+  const t=c.type||'COLORLESS';
+  const counts=deckCounts();
+  const cnt=counts[cid]||0;
+  const mv=(c.moves||[]).map(m=>{
+    const eff=m.effect?`<div class="mrow">${(m.effect||'').replace(/\n/g,'<br>')}</div>`:'';
+    return `<div class="mv"><b>${m.name}</b> ${m.cost?'['+m.cost+']':''} <span style="float:right">${m.damage||''}</span>${eff}</div>`;
+  }).join('');
+  let body=mv;
+  if(!body&&c.text) body=`<div class="mv">${c.text.replace(/\n/g,'<br>')}</div>`;
+  if(!body) body='<div class="mrow" style="opacity:.6">テキスト情報なし</div>';
+  const info=[];
+  if(c.evolvesFrom)info.push('進化前: '+c.evolvesFrom);
+  if(c.weakness)info.push('弱点: '+c.weakness);
+  if(c.resistance)info.push('抵抗: '+c.resistance);
+  if(c.retreat)info.push('にげる: '+c.retreat);
+  const isTrainer=['ITEM','SUPPORTER','STADIUM','TOOL'].includes(c.cardType);
+  const chip=isTrainer?(c.stage||'トレーナーズ'):`${ICON[t]||'⭐'} ${c.typeJP||t}`;
+  const chipCls=isTrainer?'c-COLORLESS':'c-'+t;
+  const stageRow=isTrainer?'':`${c.stage||''} ${c.hp?('・HP'+c.hp):''}`;
+  const imgHtml=c.img?`<img class="cardimg" src="${c.img}" alt="${c.name}">`:'';
+  const maxed=(!BASIC_ENERGY.has(cid)&&cnt>=4)||(ACE_SPEC_IDS.has(cid)&&(cnt>=1||deckHasAceSpec()));
+  const addDisabled=maxed||CURRENT_DECK.length>=60;
+  const addLabel=maxed?(ACE_SPEC_IDS.has(cid)?'ACE SPEC上限です':'4枚上限です'):CURRENT_DECK.length>=60?'60枚上限です':`デッキに追加（現在 ×${cnt}）`;
+  document.getElementById('modal').innerHTML=`
+    <span class="mtype ${chipCls}">${chip}</span>
+    <h3>${c.name} ${c.flags?.length?`<small style="color:#b8860b">${c.flags.join(' ')}</small>`:''}</h3>
+    ${imgHtml}
+    <div class="mrow">${stageRow}　${info.join('　')}</div>
+    <div class="mrow">デッキ内: ×${cnt}　ID:${cid}</div>
+    ${body}
+    <div class="acts">
+      <button ${addDisabled?'disabled':''} id="modalAddBtn">${addLabel}</button>
+      <button class="gray" onclick="closeModal()">閉じる</button>
+    </div>`;
+  const btn=document.getElementById('modalAddBtn');
+  if(btn&&!addDisabled) btn.onclick=()=>{addCard(cid);openBuilderCard(cid);};
+  showModal();
+}
+function addCard(id){
+  if(CURRENT_DECK.length>=60){builderMessage('60枚を超えて追加できません。');return;}
+  const cnt=(deckCounts()[id]||0);
+  if(!BASIC_ENERGY.has(id)&&cnt>=4){builderMessage('同じカードは基本エネルギー以外4枚までです。');return;}
+  if(ACE_SPEC_IDS.has(id)&&deckHasAceSpec()&&cnt===0){builderMessage('ACE SPECはデッキに1枚までです。すでに別のACE SPECが入っています。');return;}
+  if(ACE_SPEC_IDS.has(id)&&cnt>=1){builderMessage('ACE SPECはデッキに1枚までです。');return;}
+  CURRENT_DECK.push(id);builderMessage('');renderBuilderDeck();renderCardLibrary();
+}
+function removeCard(id){
+  const i=CURRENT_DECK.indexOf(id);if(i>=0)CURRENT_DECK.splice(i,1);
+  renderBuilderDeck();renderCardLibrary();
+}
+function renderBuilderDeck(){
+  const counts=deckCounts();
+  const ids=Object.keys(counts).map(Number).sort((a,b)=>a-b);
+  document.getElementById('deckCount').textContent=`${CURRENT_DECK.length}/60`;
+  document.getElementById('saveDeckBtn').disabled=CURRENT_DECK.length!==60;
+  const warn=deckWarnings();
+  document.getElementById('builderMsg').textContent=warn;
+  document.getElementById('builderDeck').innerHTML=ids.map(id=>{
+    const c=cardById(id); const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:'<div class="ph"></div>';
+    return `<div class="deckLine"><div>${inner}</div><div><div class="nm">${c.name}</div><div class="sub">ID:${id} / ${c.cardType||''} ${c.typeJP||c.type||''}</div></div><b>×${counts[id]}</b><button type="button" class="minus" data-id="${id}">-</button></div>`;
+  }).join('')||'<div class="hint">左のカード一覧からクリックして追加してください。</div>';
+  document.querySelectorAll('#builderDeck button.minus').forEach(b=>b.onclick=()=>removeCard(+b.dataset.id));
+}
+function builderMessage(msg){document.getElementById('builderMsg').textContent=msg||'';}
+async function saveBuilderDeck(){
+  const name=document.getElementById('deckNameInput').value.trim()||'保存デッキ';
+  builderMessage('保存中…');
+  const r=await post('/api/user_decks',{name,cards:CURRENT_DECK});
+  if(r.error){builderMessage(r.error);return;}
+  // 保存したら選択画面に戻り、そのデッキを選択状態にする
+  location.href='/decks';
+}
+
+['cardSearch','cardTypeFilter','energyFilter'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
+document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/decks';};
+document.getElementById('saveDeckBtn').onclick=saveBuilderDeck;
+
+document.getElementById('cardLibrary').innerHTML='<div class="hint">カード一覧を読み込み中…</div>';
+get('/api/cards').then(d=>{ALL_CARDS=d.cards||[];renderCardLibrary();});
+renderBuilderDeck();
+</script>
+{% endblock %}

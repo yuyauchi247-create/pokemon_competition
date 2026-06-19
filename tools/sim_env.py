@@ -25,6 +25,22 @@ from cg.api import (  # noqa: E402
     OptionType, SelectContext, AreaType, EnergyType, CardType, LogType,
 )
 from cg.game import battle_start, battle_select, battle_finish  # noqa: E402
+from cg.sim import Battle  # noqa: E402
+
+
+def set_active_battle(ptr):
+    """以降の battle_select / battle_finish が操作する対戦を切り替える。
+
+    libcg は battle_ptr ごとに対戦状態を持つため、複数対戦を同時に扱える。
+    各リクエストで対象対戦の ptr に切り替えてから cg を呼ぶこと
+    （Flask をシングルスレッドで動かす前提で安全）。
+    """
+    Battle.battle_ptr = ptr
+
+
+def active_battle():
+    return Battle.battle_ptr
+
 
 # ---- マスタ（遅延ロード）----
 _CARD = None
@@ -108,12 +124,13 @@ def card_meta(cid):
             "hp": c.hp, "cardType": ctype, "flags": flags, "img": img}
 
 
-def option_card(o, state=None):
+def option_card(o, state=None, select=None):
     """選択肢が参照しているカードの card_meta を返す（無ければ None）。"""
     cid = getattr(o, "cardId", None)
     if not cid:
         cid = _card_at(state, getattr(o, "area", None),
-                       getattr(o, "index", None), getattr(o, "playerIndex", None))
+                       getattr(o, "index", None), getattr(o, "playerIndex", None),
+                       select=select)
     return card_meta(cid) if cid else None
 
 
@@ -323,14 +340,34 @@ AREA_JP = {
 }
 
 
-def _card_at(state, area, index, player):
-    """盤面の (エリア, index, プレイヤー) から実際のカードを引いて id を返す。無ければ None。"""
-    if state is None or area is None or index is None:
+def _card_at(state, area, index, player, select=None):
+    """(エリア, index, プレイヤー) から実際のカードを引いて id を返す。無ければ None。
+
+    山札(DECK)からの選択は select.deck を、確認中(LOOKING)は state.looking を参照する。
+    """
+    if area is None or index is None:
+        return None
+    try:
+        a = AreaType(area)
+    except ValueError:
+        return None
+    # 山札サーチ等: カード実体は select.deck に入る
+    if a == AreaType.DECK:
+        deck = getattr(select, "deck", None) if select is not None else None
+        if deck and 0 <= index < len(deck) and deck[index] is not None:
+            return getattr(deck[index], "id", None)
+        return None
+    # 確認中（トップを見る等）: state.looking に入る
+    if a == AreaType.LOOKING:
+        looking = getattr(state, "looking", None) if state is not None else None
+        if looking and 0 <= index < len(looking) and looking[index] is not None:
+            return getattr(looking[index], "id", None)
+        return None
+    if state is None:
         return None
     pi = player if player is not None else state.yourIndex
     try:
         p = state.players[pi]
-        a = AreaType(area)
     except (IndexError, ValueError):
         return None
     arr = None
@@ -349,9 +386,9 @@ def _card_at(state, area, index, player):
     return getattr(arr[index], "id", None)
 
 
-def render_option(o, state=None) -> str:
+def render_option(o, state=None, select=None) -> str:
     """1つの選択肢(Option)を人間に読める短い文字列にする。
-    state を渡すと、エリア+index で参照されるカードの名前も解決する。"""
+    state / select を渡すと、エリア+index で参照されるカードの名前も解決する。"""
     try:
         label = OPT_LABEL.get(OptionType(o.type), str(o.type))
     except ValueError:
@@ -359,17 +396,18 @@ def render_option(o, state=None) -> str:
     parts = [label]
     if getattr(o, "attackId", None) is not None:
         parts.append(attack_label(o.attackId))
-    # カード名: cardId があれば直接、無ければ盤面参照から解決
+    # カード名: cardId があれば直接、無ければ盤面/デッキ参照から解決
     cid = getattr(o, "cardId", None)
     if not cid:
         cid = _card_at(state, getattr(o, "area", None),
-                       getattr(o, "index", None), getattr(o, "playerIndex", None))
+                       getattr(o, "index", None), getattr(o, "playerIndex", None),
+                       select=select)
     if cid:
         parts.append(card_name(cid))
     # 付ける/進化などは対象ポケモンも表示
     if getattr(o, "inPlayArea", None) is not None and state is not None:
         tgt = _card_at(state, o.inPlayArea, getattr(o, "inPlayIndex", None),
-                       state.yourIndex)
+                       state.yourIndex, select=select)
         if tgt:
             parts.append(f"→「{card_name(tgt)}」")
     if getattr(o, "number", None) is not None:
