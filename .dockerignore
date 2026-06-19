@@ -8,3 +8,15 @@ __pycache__
 # Kaggle 認証情報（絶対にイメージへ入れない）
 kaggle.json
 .kaggle
+
+# card_images はサイズが大きく(174MB)・著作権配慮で git 管理外。
+# イメージには焼かず volume マウントで供給する（compose.yaml / compose.prod.yaml）。
+# これによりデプロイ毎のビルドが高速・軽量になる。
+data/card_images
+
+# 取り込んだ Kaggle notebook 等の参照データもイメージには不要
+data/reference/kaggle_notebooks
+# 実行時に volume で供給するユーザーデータ（イメージに焼かない）
+data/user_decks
+data/user_agents
+data/logs

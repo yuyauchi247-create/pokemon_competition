@@ -1,0 +1,62 @@
+# 本番用 compose（AWS Lightsail VPS / 常時稼働）
+#
+# ローカル開発用の compose.yaml とは別物。本番は Caddy が 80/443 を受けて
+# 自動 HTTPS を張り、内部ネットワークで webapp:5000 へリバースプロキシする。
+#
+# 起動(リポジトリのルートで実行):
+#   docker compose -f compose.prod.yaml up -d --build
+services:
+  webapp:
+    build: .
+    # 配布 libcg.so が Linux x86-64 専用のため amd64 を強制
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      POKECA_WEBAPP_HOST: "0.0.0.0"
+      POKECA_WEBAPP_PORT: "5000"
+      # 公開サーバーでは AI コードのアップロード(exec)を必ず無効化する
+      POKECA_ALLOW_AGENT_UPLOAD: "0"
+    # libcg.so は ctypes のプロセスグローバル状態を使うため並行実行は不可。
+    # 1 worker / 1 thread で全リクエストを直列化する。
+    # 総当たり戦は1リクエストで長時間かかるため timeout を長めに取る。
+    command:
+      - gunicorn
+      - --chdir
+      - tools/webapp
+      - --workers
+      - "1"
+      - --threads
+      - "1"
+      - --timeout
+      - "1800"
+      - --graceful-timeout
+      - "30"
+      - --bind
+      - "0.0.0.0:5000"
+      - server:app
+    volumes:
+      # card_images はイメージに焼かず読み取り専用でマウント（.dockerignore で除外済み）
+      - ./data/card_images:/app/data/card_images:ro
+      - ./data/user_decks:/app/data/user_decks
+      - ./data/user_agents:/app/data/user_agents
+      - ./data/logs:/app/data/logs
+    # ホストにはポートを公開しない（Caddy 経由のみアクセス可能）
+    expose:
+      - "5000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - webapp
+
+volumes:
+  caddy_data:
+  caddy_config:
