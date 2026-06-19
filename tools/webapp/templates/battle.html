@@ -1,0 +1,557 @@
+{% extends "base.html" %}
+{% block title %}対戦 | ポケカ 人 vs AI{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/'">相手・デッキ選択へ</button>
+{% endblock %}
+
+{% block head %}
+<style>
+  .battle{display:grid;grid-template-columns:1fr 300px;gap:14px;max-width:1240px;margin:14px auto;padding:0 14px;align-items:start;}
+  @media(max-width:980px){.battle{grid-template-columns:1fr;}}
+  .stage{min-width:0;}
+  .nogame{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:34px;text-align:center;color:var(--sub);line-height:1.8;}
+  .playmat{--bcard:74px;position:relative;display:grid;
+    grid-template-columns:minmax(118px,.85fr) minmax(0,2.2fr) minmax(118px,.85fr);
+    grid-template-rows:auto auto auto;
+    grid-template-areas:"oppside oppbench opppiles" "midl actives midr" "youside youbench youpiles";
+    gap:10px;padding:16px;border-radius:22px;
+    background:radial-gradient(circle at 50% 50%,rgba(14,165,183,.08),transparent 40%),linear-gradient(180deg,#eef6fc,#e7f0f8);
+    border:1px solid #d3e0ec;box-shadow:inset 0 0 0 2px #ffffffcc,0 12px 34px #0b346b16;overflow:hidden;}
+  .playmat::before{content:"";position:absolute;left:50%;top:50%;width:160px;height:160px;transform:translate(-50%,-50%);z-index:0;opacity:.4;pointer-events:none;
+    border-radius:50%;border:9px solid #b9cbe0;
+    background:linear-gradient(#0000 calc(50% - 5px),#b9cbe0 calc(50% - 5px) calc(50% + 5px),#0000 calc(50% + 5px));}
+  .playmat::after{content:"";position:absolute;left:50%;top:50%;width:30px;height:30px;transform:translate(-50%,-50%);z-index:0;opacity:.5;
+    border-radius:50%;background:#fff;border:8px solid #b9cbe0;pointer-events:none;}
+  .playmat>*{position:relative;z-index:1;min-width:0;}
+  #oppSide{grid-area:oppside}#oppBench{grid-area:oppbench}#oppPiles{grid-area:opppiles}
+  #actives{grid-area:actives}
+  #youSide{grid-area:youside}#youBench{grid-area:youbench}#youPiles{grid-area:youpiles}
+  .zone-bench{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;min-height:calc(var(--bcard)*1.45);border-radius:14px;padding:6px;}
+  .zone-bench.you{background:#ffffff66;outline:1px dashed #bcd0e6;}
+  .zone-actives{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;}
+  .active-wrap{display:flex;justify-content:center;}
+  .midline{font-weight:800;color:#9fb3c7;font-size:12px;letter-spacing:.18em;}
+  .zone-side{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;}
+  .sidebox{text-align:center;}
+  .sblabel{font-size:11px;color:var(--sub);font-weight:700;margin-bottom:3px;}
+  .prizegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;justify-content:center;}
+  .prizeback{width:20px;height:28px;border-radius:3px;background:linear-gradient(135deg,#5b8def,#274a9e);box-shadow:0 1px 3px #0b346b40;}
+  .pile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:56px;padding:7px 8px;border-radius:10px;
+    background:#ffffffcc;border:1px solid var(--line);box-shadow:0 2px 8px #0b346b12;}
+  button.pile{cursor:pointer;}
+  button.pile:hover{border-color:var(--teal);transform:translateY(-1px);}
+  .pile .pcount{font-size:16px;font-weight:800;color:var(--ink);}
+  .pile .plabel{font-size:10px;color:var(--sub);font-weight:700;}
+  .playmat .pcard{width:var(--bcard);}
+  .playmat .pcard.imgcard{width:var(--bcard);}
+  .zone-actives .pcard{width:calc(var(--bcard)*1.5);}
+  .playmat .empty-c{width:var(--bcard);height:calc(var(--bcard)*1.36);font-size:10px;}
+  .zone-actives .empty-c{width:calc(var(--bcard)*1.5);height:calc(var(--bcard)*1.5*1.36);}
+  .handzone{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;margin-top:12px;box-shadow:0 4px 18px #0b346b0a;}
+  .handlabel{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:8px;}
+  .handlabel.oppHandLabel{margin-top:12px;}
+  #ask{margin-top:12px;}
+  .aiControls{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:14px;padding:14px;
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;box-shadow:0 4px 18px #0b346b0a;}
+  .aiControls .speed{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sub);font-weight:700;}
+  .aiDone{font-weight:800;color:var(--teal);}
+  .discardGrid{display:flex;flex-wrap:wrap;gap:6px;max-height:340px;overflow:auto;}
+  .discardGrid img{width:60px;border-radius:5px;}
+  .discardGrid .ph{width:60px;height:82px;background:#eef2f7;border-radius:5px;font-size:9px;display:flex;align-items:center;justify-content:center;text-align:center;color:#789;}
+  @media(max-width:980px){ #log{height:320px;} }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="battle">
+  <div class="stage">
+    <div id="banner"></div>
+    <div id="noGame" class="nogame hidden"></div>
+    <section class="playmat" id="playmat">
+      <div class="zone-side" id="oppSide"></div>
+      <div class="zone-bench opp" id="oppBench"></div>
+      <div class="zone-side" id="oppPiles"></div>
+      <div class="zone-actives" id="actives">
+        <div class="active-wrap"><div id="oppActive"></div></div>
+        <div class="midline">VS</div>
+        <div class="active-wrap"><div id="youActive"></div></div>
+      </div>
+      <div class="zone-side" id="youSide"></div>
+      <div class="zone-bench you" id="youBench"></div>
+      <div class="zone-side" id="youPiles"></div>
+    </section>
+    <div class="handzone">
+      <div class="handlabel" id="youHandLabel">あなたの手札</div>
+      <div class="row" id="youHand"></div>
+      <div class="handlabel oppHandLabel hidden" id="oppHandLabel">相手の手札</div>
+      <div class="row hidden" id="oppHand"></div>
+    </div>
+    <div id="ask"></div>
+    <div id="aiControls" class="aiControls hidden"></div>
+  </div>
+  <div id="log"><h2>対戦ログ</h2><div id="logbody"></div></div>
+</main>
+{% endblock %}
+
+{% block script %}
+<script>
+let STATE=null, picks=[], dragHand=null, busy=false;
+let aiPlaying=false, aiDelay=700, aiTimer=null;
+const GID=new URLSearchParams(location.search).get('gid')||'';
+const ENE_ICON={GRASS:'🍃',FIRE:'🔥',WATER:'💧',LIGHTNING:'⚡',PSYCHIC:'🔮',FIGHTING:'👊',DARKNESS:'🌙',METAL:'⚙️',DRAGON:'🐉',COLORLESS:'⭐',RAINBOW:'🌈',TEAM_ROCKET:'🚀'};
+const HAND=2, ACTIVE=4, BENCH=5;
+const CTX={
+  0:'行動を選んでください（手札を場へドラッグ／カードをクリック）',
+  1:'バトル場に出すたねポケモンを選んでください',
+  2:'ベンチに出すポケモンを選べます（任意）',
+  3:'入れ替えるポケモンを選んでください',
+  4:'バトル場に出すポケモンを選んでください',
+  5:'ベンチに出すポケモンを選んでください',
+  6:'場に出すポケモンを選んでください',
+  7:'手札に加えるカードを選んでください',
+  8:'トラッシュするカードを選んでください',
+  9:'山札に戻すカードを選んでください',
+  10:'山札の下に戻すカードを選んでください',
+  11:'サイドに加えるカードを選んでください',
+  12:'そのままにするカードを選んでください',
+  13:'ダメカンを乗せるポケモンを選んでください',
+  14:'ダメカンを乗せるポケモンを選んでください',
+  15:'ダメージを与えるポケモンを選んでください',
+  16:'ダメカンを取り除くポケモンを選んでください',
+  17:'回復するポケモンを選んでください',
+  18:'進化元のポケモンを選んでください',
+  19:'進化先のポケモンを選んでください',
+  20:'退化させるポケモンを選んでください',
+  21:'カードをつける相手のポケモンを選んでください',
+  22:'ポケモンにつけるカードを選んでください',
+  23:'カードを外すポケモンを選んでください',
+  24:'確認するカードを選んでください',
+  25:'効果の対象にするカードを選んでください',
+  26:'トラッシュするエネルギーカードを選んでください',
+  27:'トラッシュするどうぐを選んでください',
+  28:'付け替えるエネルギーカードを選んでください',
+  29:'トラッシュするカードを選んでください',
+  30:'トラッシュするエネルギーを選んでください',
+  31:'手札に戻すエネルギーを選んでください',
+  32:'山札に戻すエネルギーを選んでください',
+  33:'付け替えるエネルギーを選んでください',
+  34:'効果を発動する順番を選んでください',
+  35:'使うワザを選んでください',
+  36:'使えなくするワザを選んでください',
+  37:'進化元と進化先のポケモンを選んでください',
+  38:'引く枚数を選んでください',
+  39:'乗せるダメカンの数を選んでください',
+  40:'取り除くダメカンの数を選んでください',
+  41:'先攻にしますか？',
+  42:'手札を引き直しますか？',
+  43:'効果を使いますか？',
+  44:'最初の効果を選びますか？',
+  45:'さらに退化させますか？',
+  46:'コインの表を選びますか？',
+  47:'対象にする特殊状態を選んでください',
+  48:'回復する特殊状態を選んでください',
+};
+
+// energyTypes（[{type,count},...]）をタイプ別アイコン列に変換。無ければ●×energyにフォールバック。
+function eneIcons(energyTypes,energy){
+  if(Array.isArray(energyTypes)&&energyTypes.length){
+    return energyTypes.map(e=>`<span class="enei" title="${e.type} ×${e.count}">${(ENE_ICON[e.type]||'⭐').repeat(e.count)}</span>`).join('');
+  }
+  return '●'.repeat(energy||0);
+}
+// 選択肢ラベルを見やすく整形（NUMBER/YES/NO は文脈に応じた表記にする）
+function optLabel(o,context){
+  if(o.optionType==='NUMBER'&&o.number!=null){
+    if(context===38)return o.number===0?'引かない':`${o.number}枚 引く`;
+    if(context===39||context===40)return `ダメカン ${o.number}個`;
+    return `${o.number} を選ぶ`;
+  }
+  if(o.optionType==='YES')return 'はい';
+  if(o.optionType==='NO')return 'いいえ';
+  if(o.card&&o.card.name)return o.card.name;
+  return o.label||('選択'+o.index);
+}
+function tgtName(o){return (String(o.label).split('→')[1]||'').replace(/[「」]/g,'').trim()||'ポケモン';}
+
+/* ---------- 選択肢の分類（手札／盤面／パネル） ---------- */
+function classify(){
+  const m={hand:{},board:{},attack:[],panel:[],playHand:new Set()};
+  const s=STATE.select; if(!s)return m;
+  s.options.forEach(o=>{
+    const ot=o.optionType;
+    if(ot==='ATTACH'||ot==='EVOLVE'||ot==='PLAY'){
+      (m.hand[o.srcIndex]=m.hand[o.srcIndex]||[]).push(o);
+      if(ot==='PLAY')m.playHand.add(o.srcIndex);
+    } else if(ot==='CARD'){
+      if(o.area===HAND)(m.hand[o.srcIndex]=m.hand[o.srcIndex]||[]).push(o);
+      else if(o.area===ACTIVE||o.area===BENCH)(m.board[o.area+':'+o.srcIndex]=m.board[o.area+':'+o.srcIndex]||[]).push(o);
+      else m.panel.push(o);
+    } else if(ot==='ATTACK'){ m.attack.push(o); }
+    else if(ot==='RETREAT'||ot==='ABILITY'){ (m.board[ACTIVE+':0']=m.board[ACTIVE+':0']||[]).push(o); }
+    else m.panel.push(o);
+  });
+  return m;
+}
+// 場の位置を日本語に（バトル場 / ベンチN）。同名ポケモンが複数いても区別できるようにする。
+function posName(area,idx){
+  if(area===ACTIVE)return 'バトル場';
+  if(area===BENCH)return 'ベンチ'+(((idx??0)|0)+1);
+  return '';
+}
+function handActions(H){
+  const hand=STATE.board.you.hand||[]; const out=[];
+  (classify().hand[H]||[]).forEach(o=>{
+    const pn=posName(o.inPlayArea,o.inPlayIndex); const suf=pn?`（${pn}）`:'';
+    let lbl;
+    if(o.optionType==='ATTACH')lbl=`「${tgtName(o)}」${suf}にエネルギーをつける`;
+    else if(o.optionType==='EVOLVE')lbl=`「${tgtName(o)}」${suf}を「${o.card?o.card.name:'進化'}」に進化させる`;
+    else if(o.optionType==='PLAY')lbl=`「${hand[H]?hand[H].name:''}」を場に出す`;
+    else lbl=`「${hand[H]?hand[H].name:''}」を選ぶ`;
+    out.push({label:lbl,index:o.index});
+  });
+  return out;
+}
+function boardActions(area,pos){
+  const out=[];
+  (classify().board[area+':'+pos]||[]).forEach(o=>{
+    let lbl = o.optionType==='RETREAT'?'にげる（入れ替え）' : (o.optionType==='ABILITY'?o.label:'このポケモンを選ぶ');
+    out.push({label:lbl,index:o.index});
+  });
+  return out;
+}
+function attackOptionMap(){
+  const m={};
+  ((STATE.select&&STATE.select.options)||[]).forEach(o=>{
+    if(o.optionType==='ATTACK'&&o.attackId!=null) m[o.attackId]=o.index;});
+  return m;
+}
+
+/* ---------- カードタイル ---------- */
+function tile(c,{active=false,hp=null,maxHp=null,energy=null,energyTypes=null,area=null,pos=null,hand=null,drag=false}={}){
+  if(!c)return `<div class="empty-c">なし</div>`;
+  const t=c.type||'COLORLESS';
+  const attrs=[`data-cid="${c.id}"`];
+  if(area!=null)attrs.push(`data-area="${area}"`,`data-pos="${pos}"`);
+  if(hand!=null)attrs.push(`data-hand="${hand}"`);
+  if(drag)attrs.push('draggable="true"');
+  let ov='';
+  if(hp!=null&&maxHp!=null){
+    const p=Math.max(0,Math.round(100*hp/maxHp));
+    ov=`<div class="ov"><div class="ovln"><span>HP ${hp}/${maxHp}</span><span class="ovene">${eneIcons(energyTypes,energy)}</span></div>
+        <div class="hpbar"><i style="width:${p}%"></i></div></div>`;
+  }
+  if(c.img){
+    return `<div class="pcard imgcard ${active?'active':''}" ${attrs.join(' ')}>
+       <img class="full" src="${c.img}" loading="lazy" alt="${c.name}" draggable="false">${ov}</div>`;
+  }
+  let hpln='';
+  if(hp!=null&&maxHp!=null){const p=Math.max(0,Math.round(100*hp/maxHp));
+    hpln=`<div class="ln"><span>HP</span><span>${hp}/${maxHp}</span></div><div class="hpbar"><i style="width:${p}%"></i></div>`;}
+  else if(c.hp){hpln=`<div class="ln"><span>HP</span><span>${c.hp}</span></div>`;}
+  const ene=energy!=null?`<div class="ene">${eneIcons(energyTypes,energy)||'　'}</div>`:'';
+  return `<div class="pcard ${active?'active':''}" ${attrs.join(' ')}>
+     <div class="bar c-${t}"></div>
+     <div class="bd"><div class="nm">${c.name}</div><div class="art a-${t}">${ICON[t]||'⭐'}</div>${hpln}${ene}</div></div>`;
+}
+function benchHtml(bench,interactive){
+  const slots=(bench||[]).map((b,i)=> b
+    ? tile(b,{hp:b.hp,maxHp:b.maxHp,energy:b.energy,energyTypes:b.energyTypes,area:interactive?BENCH:null,pos:interactive?i:null})
+    : '<div class="empty-c">－</div>');
+  if(!slots.length) slots.push('<div class="empty-c">ベンチなし</div>');
+  return slots.join('');
+}
+function sideHtml(s){
+  const backs=Array.from({length:Math.max(0,s.prize)},()=>'<div class="prizeback"></div>').join('');
+  return `<div class="sidebox"><div class="sblabel">サイド ${s.prize}</div><div class="prizegrid">${backs}</div></div>
+          <div class="pile"><span class="pcount">${s.deck}</span><span class="plabel">山札</span></div>`;
+}
+function pilesHtml(s,who){
+  const cond=s.conditions&&s.conditions.length?`<div class="pile" style="border-color:#f0b4be"><span class="plabel" style="color:#e0556b">${s.conditions.join(' ')}</span></div>`:'';
+  return `<button type="button" class="pile" data-who="${who}"><span class="pcount">${s.discard}</span><span class="plabel">トラッシュ</span></button>${cond}`;
+}
+
+/* ---------- 描画 ---------- */
+function renderBoard(){
+  const b=STATE.board;
+  document.getElementById('turnInfo').textContent=b?`ターン ${b.turn}｜${STATE.youLabel||'あなた'} vs ${STATE.oppLabel||'相手'}`:'';
+  if(!b)return;
+  const oa=b.opp.active, ya=b.you.active;
+  document.getElementById('oppActive').innerHTML=tile(oa,{active:true,hp:oa?.hp,maxHp:oa?.maxHp,energy:oa?.energy,energyTypes:oa?.energyTypes});
+  document.getElementById('youActive').innerHTML=tile(ya,{active:true,hp:ya?.hp,maxHp:ya?.maxHp,energy:ya?.energy,energyTypes:ya?.energyTypes,area:ACTIVE,pos:0});
+  document.getElementById('oppBench').innerHTML=benchHtml(b.opp.bench,false);
+  document.getElementById('youBench').innerHTML=benchHtml(b.you.bench,true);
+  document.getElementById('oppSide').innerHTML=sideHtml(b.opp);
+  document.getElementById('youSide').innerHTML=sideHtml(b.you);
+  document.getElementById('oppPiles').innerHTML=pilesHtml(b.opp,'opp');
+  document.getElementById('youPiles').innerHTML=pilesHtml(b.you,'you');
+  // 手札
+  const m=classify();
+  const actionable=new Set(Object.keys(m.hand).map(Number));
+  document.getElementById('youHand').innerHTML=(b.you.hand||[]).map((c,i)=>
+     tile(c,{hand:i,drag:actionable.has(i)})).join('')||'<span class="hint">なし</span>';
+  // AI vs AI のときは相手の手札も公開
+  const oppHandRow=document.getElementById('oppHand'), oppHandLabel=document.getElementById('oppHandLabel');
+  if(STATE.mode==='ai'&&b.opp.hand){
+    document.getElementById('youHandLabel').textContent=(STATE.youLabel||'プレイヤー1')+' の手札';
+    oppHandLabel.textContent=(STATE.oppLabel||'プレイヤー2')+' の手札';
+    oppHandLabel.classList.remove('hidden'); oppHandRow.classList.remove('hidden');
+    oppHandRow.innerHTML=b.opp.hand.map(c=>tile(c,{})).join('')||'<span class="hint">なし</span>';
+  }else{
+    document.getElementById('youHandLabel').textContent='あなたの手札';
+    oppHandLabel.classList.add('hidden'); oppHandRow.classList.add('hidden');
+  }
+  bindClicks(); bindDnD();
+}
+function renderAsk(){
+  const ask=document.getElementById('ask');
+  if(STATE.result!==-1){ask.innerHTML='';return;}
+  const s=STATE.select;
+  if(!s){ask.innerHTML=STATE.running?'<div class="hint">AIが考えています…</div>':'';return;}
+  const single=(s.minCount===1&&s.maxCount===1);
+  const m=classify();
+  let h=`<h2>あなたの番です</h2><div class="hint">${CTX[s.context]||'選んでください'}</div>`;
+  const panelOpts = single ? m.panel : s.options;
+  h+=`<div class="opts" id="opts"></div>`;
+  if(!single)h+=`<div style="margin-top:10px"><button id="confirm">決定 (0/${s.maxCount})</button></div>`;
+  h+=`<details><summary>すべての選択肢を表示</summary><div class="opts" id="allopts" style="margin-top:8px"></div></details>`;
+  ask.innerHTML=h;
+
+  const opts=document.getElementById('opts'); picks=[];
+  panelOpts.forEach(o=>{
+    const el=document.createElement('div'); el.className='opt'; el.dataset.i=o.index;
+    if(o.card&&o.card.img){
+      el.classList.add('optcard');
+      el.innerHTML=`<img src="${o.card.img}" loading="lazy" alt="${o.card.name||''}" draggable="false"><span>${o.card.name||optLabel(o,s.context)}</span>`;
+    }else{
+      el.textContent=optLabel(o,s.context);
+    }
+    el.onclick=()=>{
+      if(single){submit([o.index]);return;}
+      const i=o.index;
+      if(picks.includes(i)){picks=picks.filter(x=>x!==i);el.classList.remove('sel');}
+      else{if(picks.length>=s.maxCount)return;picks.push(i);el.classList.add('sel');}
+      const cb=document.getElementById('confirm');if(cb)cb.textContent=`決定 (${picks.length}/${s.maxCount})`;
+    };
+    opts.appendChild(el);
+  });
+  if(single&&panelOpts.length===0&&Object.keys(m.hand).length===0&&Object.keys(m.board).length===0){
+    opts.innerHTML='<div class="hint">（操作可能なカードがありません）</div>';
+  }
+  const cb=document.getElementById('confirm');
+  if(cb)cb.onclick=()=>{if(picks.length<s.minCount){alert(`${s.minCount}個以上選んでください`);return;}submit(picks);};
+  const all=document.getElementById('allopts');
+  s.options.forEach(o=>{const el=document.createElement('div');el.className='opt';
+    if(o.card&&o.card.img){el.classList.add('optcard');
+      el.innerHTML=`<img src="${o.card.img}" loading="lazy" alt="${o.card.name||''}" draggable="false"><span>${o.card.name||optLabel(o,s.context)}</span>`;}
+    else{el.textContent=optLabel(o,s.context);}
+    el.onclick=()=>submit([o.index]);all.appendChild(el);});
+}
+function renderBanner(){
+  const b=document.getElementById('banner');
+  if(STATE.result===-1){b.style.display='none';return;}
+  b.style.display='block';
+  const isAi=STATE.mode==='ai';
+  if(STATE.result===0){ // プレイヤー1（人間 or AI）の勝ち
+    b.className='win';
+    b.textContent=isAi?`🏆 ${STATE.youLabel||'プレイヤー1'} の勝ち！`:'🎉 あなたの勝ち！';
+  }else if(STATE.result===1){ // プレイヤー2（相手）の勝ち
+    b.className='lose';
+    b.textContent=isAi?`🏆 ${STATE.oppLabel||'プレイヤー2'} の勝ち！`:'AIの勝ち…';
+  }else{
+    b.className='draw';b.textContent='引き分け';
+  }
+}
+
+/* ---------- クリック→詳細＋操作モーダル ---------- */
+function bindClicks(){
+  document.querySelectorAll('#youHand .pcard[data-cid]').forEach(el=>{
+    el.addEventListener('click',()=>{if(busy)return;openCard(+el.dataset.cid,handActions(+el.dataset.hand));});});
+  document.querySelectorAll('#youActive .pcard[data-cid],#youBench .pcard[data-cid]').forEach(el=>{
+    el.addEventListener('click',()=>{if(busy)return;openCard(+el.dataset.cid,boardActions(+el.dataset.area,+el.dataset.pos));});});
+  document.querySelectorAll('#oppActive .pcard[data-cid],#oppBench .pcard[data-cid],#oppHand .pcard[data-cid]').forEach(el=>{
+    el.addEventListener('click',()=>{if(busy)return;openCard(+el.dataset.cid,[]);});});
+  document.querySelectorAll('.pile[data-who]').forEach(b=>b.onclick=()=>showDiscard(b.dataset.who));
+}
+function showDiscard(who){
+  const s=who==='you'?STATE.board.you:STATE.board.opp;
+  const cards=s.discardList||[];
+  const grid=cards.map(c=>c.img?`<img src="${c.img}" title="${c.name}" alt="${c.name}">`:`<div class="ph">${c.name}</div>`).join('')||'<div class="hint">なし</div>';
+  document.getElementById('modal').innerHTML=`<h3>トラッシュ（${cards.length}枚）</h3>
+    <div class="discardGrid">${grid}</div>
+    <div class="acts"><button class="gray" onclick="closeModal()">閉じる</button></div>`;
+  showModal();
+}
+async function openCard(cid,actions){
+  const c=await get('/api/card/'+cid); const t=c.type||'COLORLESS';
+  const atkMap=attackOptionMap();
+  const mv=(c.moves||[]).map(m=>{
+    const eff=m.effect?`<div class="mrow">${(m.effect||'').replace(/\n/g,'<br>')}</div>`:'';
+    const head=`<b>${m.name}</b> ${m.cost?'['+m.cost+']':''} <span style="float:right">${m.damage||''}</span>`;
+    if(m.attackId!=null){
+      const usable=atkMap[m.attackId]!=null;
+      return `<button class="mvatk" ${usable?'':'disabled'} data-idx="${usable?atkMap[m.attackId]:''}" data-nm="${m.name}">
+                ${head}${eff}</button>`;
+    }
+    return `<div class="mv">${head}${eff}</div>`;
+  }).join('');
+  let body=mv;
+  if(!body && c.text) body=`<div class="mv">${c.text.replace(/\n/g,'<br>')}</div>`;
+  if(!body) body='<div class="mrow" style="opacity:.6">テキスト情報なし</div>';
+  const info=[]; if(c.evolvesFrom)info.push(`進化前: ${c.evolvesFrom}`);
+  if(c.weakness)info.push(`弱点: ${c.weakness}`); if(c.resistance)info.push(`抵抗: ${c.resistance}`);
+  if(c.retreat)info.push(`にげる: ${c.retreat}`);
+  let actHtml=(actions&&actions.length)
+    ?`<div class="acts">${actions.map((a,i)=>`<button data-pi="${i}">${a.label}</button>`).join('')}
+       <button class="gray" onclick="closeModal()">戻る</button></div>`
+    :`<div class="acts"><button class="gray" onclick="closeModal()">戻る</button></div>`;
+  const isTrainer=['ITEM','SUPPORTER','STADIUM','TOOL'].includes(c.cardType);
+  const chip = isTrainer ? (c.stage||'トレーナーズ') : `${ICON[t]||'⭐'} ${c.typeJP||t}`;
+  const chipCls = isTrainer ? 'c-COLORLESS' : 'c-'+t;
+  const stageRow = isTrainer ? '' : `${c.stage||''} ${c.hp?('・HP'+c.hp):''}`;
+  const imgHtml=c.img?`<img class="cardimg" src="${c.img}" alt="${c.name}">`:'';
+  document.getElementById('modal').innerHTML=`
+    <span class="mtype ${chipCls}">${chip}</span>
+    <h3>${c.name} ${c.flags?.length?`<small style="color:#b8860b">${c.flags.join(' ')}</small>`:''}</h3>
+    ${imgHtml}
+    <div class="mrow">${stageRow}　${info.join('　')}</div>
+    ${body}
+    ${actHtml}`;
+  document.querySelectorAll('#modal button[data-pi]').forEach(btn=>{
+    btn.onclick=()=>{const a=actions[+btn.dataset.pi];closeModal();submit([a.index]);};});
+  document.querySelectorAll('#modal button.mvatk:not([disabled])').forEach(btn=>{
+    btn.onclick=()=>confirmAction(`「${btn.dataset.nm}」で攻撃する`,[+btn.dataset.idx]);});
+  showModal();
+}
+function confirmAction(text,p){
+  document.getElementById('modal').innerHTML=`<h3>確認</h3>
+    <div class="mrow" style="font-size:15px;color:var(--ink)">${text}<br>を実行しますか？</div>
+    <div class="acts"><button onclick="doConfirm()">はい</button>
+    <button class="gray" onclick="closeModal()">いいえ</button></div>`;
+  window._pending=p; showModal();
+}
+function doConfirm(){const p=window._pending;closeModal();submit(p);}
+
+/* ---------- ドラッグ&ドロップ（エネ付け・場に出す・進化）---------- */
+function bindDnD(){
+  document.querySelectorAll('#youHand .pcard[data-hand][draggable="true"]').forEach(el=>{
+    el.addEventListener('dragstart',e=>{dragHand=+el.dataset.hand;el.classList.add('dragging');
+      if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',el.dataset.hand);}});
+    el.addEventListener('dragend',()=>{dragHand=null;el.classList.remove('dragging');
+      document.querySelectorAll('.drop,.dropok').forEach(x=>x.classList.remove('drop','dropok'));});
+  });
+  // ポケモンの上：エネ付け or 進化
+  document.querySelectorAll('#youActive .pcard[data-area],#youBench .pcard[data-area]').forEach(el=>{
+    el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drop');});
+    el.addEventListener('dragleave',()=>el.classList.remove('drop'));
+    el.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();el.classList.remove('drop');
+      if(dragHand==null)return;
+      const area=+el.dataset.area,pos=+el.dataset.pos;
+      const o=(STATE.select?.options||[]).find(x=>(x.optionType==='ATTACH'||x.optionType==='EVOLVE')
+          &&x.srcIndex===dragHand&&x.inPlayArea===area&&x.inPlayIndex===pos);
+      if(!o){alert('このポケモンにはここから出せません');return;}
+      const verb=o.optionType==='EVOLVE'?'進化させる':'エネルギーをつける';
+      confirmAction(`「${tgtName(o)}」に${verb}`,[o.index]);
+    });
+  });
+  // ベンチ（空き）への：手札カードを出す
+  const fld=document.getElementById('youBench');
+  fld.addEventListener('dragover',e=>{e.preventDefault();fld.classList.add('dropok');});
+  fld.addEventListener('dragleave',e=>{if(e.target===fld)fld.classList.remove('dropok');});
+  fld.addEventListener('drop',e=>{e.preventDefault();fld.classList.remove('dropok');
+    if(dragHand==null)return;
+    const opts=STATE.select?.options||[];
+    const o=opts.find(x=>x.optionType==='PLAY'&&x.srcIndex===dragHand)
+          ||opts.find(x=>x.optionType==='CARD'&&x.area===HAND&&x.srcIndex===dragHand);
+    if(!o){return;}
+    const hand=STATE.board.you.hand||[];
+    confirmAction(`「${hand[dragHand]?hand[dragHand].name:'カード'}」を場に出す`,[o.index]);
+  });
+}
+
+/* ---------- イベント逐次再生 ---------- */
+function pushLog(ev){const body=document.getElementById('logbody');const d=document.createElement('div');
+  d.className='ev '+(ev.who||'sys');d.textContent=ev.text;body.appendChild(d);body.scrollTop=body.scrollHeight;}
+function evDelay(ev,total){
+  const fast=total>16;
+  if(/カードを引いた|を引いた/.test(ev.text)) return fast?120:300;
+  if(ev.who==='opp') return fast?500:1000;
+  if(ev.who==='sys') return fast?350:650;
+  return fast?180:380;
+}
+function playEvents(events){return new Promise(res=>{
+  if(!events||!events.length){res();return;}
+  let i=0;
+  const tick=()=>{ if(i>=events.length){res();return;} const ev=events[i++];
+    pushLog(ev); setTimeout(tick, evDelay(ev, events.length)); };
+  tick();});}
+
+/* ---------- 状態反映 ---------- */
+async function apply(ns,playback){
+  STATE=ns; renderBoard(); renderBanner();
+  if(STATE.mode==='ai'){
+    document.getElementById('ask').classList.add('hidden');
+    if(playback){busy=true;await playEvents(ns.events);busy=false;}
+    renderAiControls();
+    return;
+  }
+  document.getElementById('aiControls').classList.add('hidden');
+  document.getElementById('ask').classList.remove('hidden');
+  document.getElementById('ask').innerHTML=(ns.events&&ns.events.length&&playback)?'<div class="hint">…経過を再生中…</div>':'';
+  if(playback){busy=true;await playEvents(ns.events);busy=false;}
+  renderAsk();
+}
+async function submit(p){closeModal();busy=true;
+  document.getElementById('ask').innerHTML='<div class="hint">処理中…</div>';
+  const ns=await post('/api/select',{gid:GID,picks:p});await apply(ns,true);}
+
+/* ---------- AI vs AI 観戦コントロール ---------- */
+function renderAiControls(){
+  const box=document.getElementById('aiControls');
+  box.classList.remove('hidden');
+  if(STATE.result!==-1){box.innerHTML='<div class="aiDone">対戦終了</div>';return;}
+  box.innerHTML=`
+    <button id="aiPlayPause">${aiPlaying?'⏸ 一時停止':'▶ 再生'}</button>
+    <label class="speed">速度
+      <input type="range" id="aiSpeed" min="200" max="2000" step="100" value="${aiDelay}">
+      <span id="aiSpeedVal">${(aiDelay/1000).toFixed(1)}秒/手</span>
+    </label>`;
+  document.getElementById('aiPlayPause').onclick=toggleAiPlay;
+  document.getElementById('aiSpeed').oninput=e=>{aiDelay=+e.target.value;
+    document.getElementById('aiSpeedVal').textContent=(aiDelay/1000).toFixed(1)+'秒/手';};
+}
+function toggleAiPlay(){
+  aiPlaying=!aiPlaying;
+  renderAiControls();
+  if(aiPlaying)aiLoop();
+  else if(aiTimer){clearTimeout(aiTimer);aiTimer=null;}
+}
+async function aiLoop(){
+  if(!aiPlaying||!STATE||STATE.result!==-1){aiPlaying=false;renderAiControls();return;}
+  const ns=await post('/api/step',{gid:GID});
+  if(ns.error){aiPlaying=false;pushLog({who:'sys',text:'エラー: '+ns.error});renderAiControls();return;}
+  await apply(ns,true);
+  if(aiPlaying&&STATE.result===-1) aiTimer=setTimeout(aiLoop,aiDelay);
+  else{aiPlaying=false;renderAiControls();}
+}
+
+function showNoGame(){
+  document.getElementById('playmat').classList.add('hidden');
+  document.querySelector('.handzone').classList.add('hidden');
+  const ng=document.getElementById('noGame');
+  ng.classList.remove('hidden');
+  ng.innerHTML='対戦がまだ開始されていません。<br><a href="/">相手・デッキ選択画面</a>から対戦を始めてください。';
+}
+
+/* ---------- 初期化 ---------- */
+(async ()=>{
+  if(!GID){showNoGame();return;}
+  const st=await get('/api/state?gid='+encodeURIComponent(GID));
+  if(!st||!st.board){showNoGame();return;}
+  document.getElementById('logbody').innerHTML='';
+  pushLog({who:'sys',text:'―― 対戦開始 ――'});
+  await apply(st,true);
+  if(st.mode==='ai'&&st.result===-1){aiPlaying=true;renderAiControls();aiLoop();}
+})();
+</script>
+{% endblock %}

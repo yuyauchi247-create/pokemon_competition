@@ -1,6 +1,24 @@
-.playwright-mcp
-.venv
-uv.lock
-README.7z
-*.md
-*.pdf
+# Python
+__pycache__/
+*.pyc
+
+# uv / venv
+.venv/
+
+# 開発ツール
+.playwright-mcp/
+
+# Kaggle 認証情報（絶対にコミットしない）
+kaggle.json
+.kaggle/
+
+# 巨大な公式生データ（再取得可能。Gitには載せない）
+# 取得方法: uv run kaggle competitions download -c pokemon-tcg-ai-battle
+data/reference/*.pdf
+data/kaggle_raw/
+*.zip
+
+# ユーザー作成デッキ（ローカル保存用。空ディレクトリだけ管理）
+data/user_decks/*.csv
+data/user_decks/*.json
+!data/user_decks/.gitkeep
