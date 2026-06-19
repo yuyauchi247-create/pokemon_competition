@@ -30,7 +30,8 @@ from selection import (  # noqa: E402
     DEFAULT_SAMPLE_DECK, SAMPLE_DECKS, SelectionError, deck_card_counts,
     delete_user_agent, extract_agent_code_from_ipynb, list_user_agents,
     list_user_decks, load_custom_agent, parse_decklist_comments, parse_deck_csv_text,
-    preview_agent_upload, read_sample_deck, read_user_agent_code, read_user_deck,
+    preview_agent_upload, read_sample_deck, read_user_agent_code,
+    read_user_agent_deck, read_user_deck,
     sample_deck_options, save_user_agent, save_user_deck,
     update_user_agent_deck, validate_ai_picks, validate_deck_for_builder,
 )
@@ -147,8 +148,12 @@ def _decode_upload(file_storage, label):
 
 
 def _agent_deck_list(agent_id):
-    """登録AIのファイル内デッキ（60枚のID列）を返す。取得不可なら SelectionError。"""
-    deck = parse_decklist_comments(read_user_agent_code(agent_id))
+    """登録AIのデッキ（60枚のID列）を返す。取得不可なら SelectionError。
+
+    保存済みデッキ（meta.json / deck.csv。Kaggle出力からの回収を含む）を優先し、
+    無ければコード内のデッキ注記を解析する。
+    """
+    deck = read_user_agent_deck(agent_id) or parse_decklist_comments(read_user_agent_code(agent_id))
     if not deck:
         raise SelectionError("この登録AIのデッキは使えません（ファイルから読み取れず、対戦時にAIが決定するタイプ）。別のデッキを選んでください。")
     return deck
@@ -229,10 +234,11 @@ def _ask_agent_for_deck(agent_dir, default_deck):
         return list(default_deck)
 
 
-def _materialize_agent(gid, side, code, name, default_deck):
+def _materialize_agent(gid, side, code, name, default_deck, forced_deck=None):
     """コード文字列1つから (agent, deck, label) を作る（アップロード/登録 共通の核）。
 
-    デッキ解決: ①コード内のデッキリスト注記が60枚そろえばそれ → ②AIに初期デッキを尋ねる。
+    デッキ解決: ⓪保存済みデッキ(forced_deck。Kaggle回収等)があればそれ →
+    ①コード内のデッキリスト注記が60枚そろえばそれ → ②AIに初期デッキを尋ねる。
     解決デッキを deck.csv として配置してからエージェントを読み込む（deck.csv を読むAI対応）。
     """
     agent_dir = _custom_agent_dir(gid, side)
@@ -240,12 +246,16 @@ def _materialize_agent(gid, side, code, name, default_deck):
         shutil.rmtree(agent_dir, ignore_errors=True)
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "main.py").write_text(code, encoding="utf-8")
-    deck = parse_decklist_comments(code)
-    if deck is not None:
-        deck_source = "ファイル内のデッキ"
+    if forced_deck and len(forced_deck) == 60:
+        deck = list(forced_deck)
+        deck_source = "登録デッキ"
     else:
-        deck = _ask_agent_for_deck(agent_dir, default_deck)
-        deck_source = "AIが決定"
+        deck = parse_decklist_comments(code)
+        if deck is not None:
+            deck_source = "ファイル内のデッキ"
+        else:
+            deck = _ask_agent_for_deck(agent_dir, default_deck)
+            deck_source = "AIが決定"
     (agent_dir / "deck.csv").write_text(
         "\n".join(str(c) for c in deck) + "\n", encoding="utf-8")
     agent = _import_agent_in_dir(agent_dir)
@@ -271,7 +281,9 @@ def _load_agent_side(gid, side, atype, file_field, id_field, default_deck):
         aid = request.form.get(id_field) or ""
         code = read_user_agent_code(aid)  # 不正IDは SelectionError
         name = next((a["name"] for a in list_user_agents() if a["id"] == aid), aid)
-        return _materialize_agent(gid, side, code, f"登録AI（{name}）", default_deck)
+        forced = read_user_agent_deck(aid)  # 保存済みデッキ(Kaggle回収等)を優先
+        return _materialize_agent(gid, side, code, f"登録AI（{name}）",
+                                  default_deck, forced_deck=forced)
     code, fname = _upload_agent_code(file_field)
     return _materialize_agent(gid, side, code, f"カスタムAI（{fname}）", default_deck)
 
@@ -336,7 +348,9 @@ def _load_registered_agent(aid):
         shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True, exist_ok=True)
     (d / "main.py").write_text(code, encoding="utf-8")
-    deck = parse_decklist_comments(code)
+    deck = read_user_agent_deck(aid)  # 保存済みデッキ(Kaggle回収等)を優先
+    if deck is None:
+        deck = parse_decklist_comments(code)
     if deck is None:
         deck = _ask_agent_for_deck(d, read_sample_deck(SAMPLE_DECKS[0]["id"]))
     (d / "deck.csv").write_text("\n".join(str(c) for c in deck) + "\n", encoding="utf-8")

@@ -484,6 +484,48 @@ def delete_user_agent(agent_id: str, agents_dir: Path | None = None) -> None:
     shutil.rmtree(user_agent_dir(agent_id, agents_dir), ignore_errors=True)
 
 
+def _expand_deck_counts(counts) -> list[int]:
+    """meta.json の deck（[{cardId,count}]）を 60 枚のID列へ展開する。"""
+    ids: list[int] = []
+    for c in counts or []:
+        if not isinstance(c, dict):
+            continue
+        cid = c.get("cardId")
+        n = c.get("count", 0)
+        try:
+            ids.extend([int(cid)] * int(n))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+def read_user_agent_deck(agent_id: str, agents_dir: Path | None = None) -> list[int] | None:
+    """登録AIの保存済みデッキ(60枚のID列)を返す。無ければ None。
+
+    agent_dir/deck.csv → meta.json の deck(枚数集計) の順に探す。
+    Kaggle出力などから後付けで保存したデッキを対戦・選択で使うために用いる。
+    """
+    d = user_agent_dir(agent_id, agents_dir)
+    p = d / "deck.csv"
+    if p.exists():
+        try:
+            ids = [int(x) for x in p.read_text(encoding="utf-8-sig").split() if x.strip().isdigit()]
+            if len(ids) == 60:
+                return ids
+        except (ValueError, OSError):
+            pass
+    meta_path = d / "meta.json"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            ids = _expand_deck_counts(meta.get("deck"))
+            if len(ids) == 60:
+                return ids
+        except (json.JSONDecodeError, OSError):
+            pass
+    return None
+
+
 def update_user_agent_deck(agent_id, deck, source, agents_dir=None):
     """登録AIの meta.json にデッキ(60枚)を後から設定する（登録時のAI問い合わせ結果など）。"""
     d = user_agent_dir(agent_id, agents_dir)
