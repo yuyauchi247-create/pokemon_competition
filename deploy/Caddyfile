@@ -1,0 +1,21 @@
+# Caddy リバースプロキシ設定（自動 HTTPS）
+#
+# mypokeca.com の A レコードがこのサーバーの固定IPを指していれば、
+# Caddy が Let's Encrypt から証明書を自動取得・更新する。
+# 証明書取得には 80/443 が公開されている必要がある。
+
+mypokeca.com {
+	reverse_proxy webapp:5000
+
+	# 簡易アクセスログ（必要なら）
+	log {
+		output stdout
+		format console
+	}
+}
+
+# www からのアクセスを裸ドメインへリダイレクト（任意。
+# www.mypokeca.com の A/CNAME を設定した場合に有効）
+www.mypokeca.com {
+	redir https://mypokeca.com{uri} permanent
+}

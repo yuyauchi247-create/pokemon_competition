@@ -13,7 +13,8 @@ RUN apt-get update \
 WORKDIR /app
 
 # 実行時に必要なのは flask のみ（kaggle/pymupdf は実対戦では不要）。
-RUN pip install --no-cache-dir "flask>=3.1.3"
+# 本番(compose.prod.yaml)では gunicorn 経由で起動するため同梱しておく。
+RUN pip install --no-cache-dir "flask>=3.1.3" "gunicorn>=21.2"
 
 # アプリ一式をコピー
 COPY . /app

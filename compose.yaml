@@ -9,6 +9,8 @@ services:
       POKECA_WEBAPP_HOST: "0.0.0.0"
       POKECA_WEBAPP_PORT: "5000"
     volumes:
+      # card_images はイメージに焼かず読み取り専用でマウント（.dockerignore で除外済み）
+      - ./data/card_images:/app/data/card_images:ro
       # デッキ作成画面で保存したデッキを再ビルド後も残す
       - ./data/user_decks:/app/data/user_decks
       # 登録したAIエージェントを残す
