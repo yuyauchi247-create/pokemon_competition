@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}対戦ログ（リプレイ） | ポケカ{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/'">ホームへ</button>
+{% endblock %}
+
+{% block head %}
+<style>
+  .replayWrap{display:grid;grid-template-columns:300px 1fr;gap:14px;max-width:1320px;margin:14px auto;padding:0 14px;align-items:start;}
+  @media(max-width:980px){.replayWrap{grid-template-columns:1fr;}}
+  .logListPanel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;box-shadow:0 4px 18px #0b346b0a;max-height:80vh;overflow:auto;}
+  .logListPanel h3{margin:0 0 10px;font-size:14px;color:var(--teal);}
+  .logItem{border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:8px;cursor:pointer;background:#fbfdff;font-size:12px;}
+  .logItem:hover{background:#f1f7ff;}
+  .logItem.sel{border-color:var(--teal);box-shadow:0 0 0 2px #0ea5b755;}
+  .logItem .vs{font-weight:800;color:var(--ink);font-size:13px;line-height:1.3;}
+  .logItem .meta{color:var(--sub);margin-top:3px;}
+  .repMeta{font-weight:800;color:var(--ink);margin-bottom:8px;}
+  .repControls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);
+    border-left:4px solid var(--teal);border-radius:14px;padding:12px;margin-top:12px;box-shadow:0 4px 18px #0b346b0a;}
+  .repControls input[type=range]{flex:1;min-width:140px;}
+  .repControls .spd2{background:#eaf0f7;color:#46566b;box-shadow:none;padding:6px 10px;}
+  .repControls .spd2.on{background:var(--blue);color:#fff;}
+  .repLog{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;margin-top:12px;height:200px;display:flex;flex-direction:column;}
+  .repLog h2{margin:0 0 8px;font-size:12px;color:var(--sub);}
+  #repLogBody{overflow-y:auto;flex:1;font-size:12px;line-height:1.5;}
+  /* プレイマット（battle と同じ見た目） */
+  .playmat{--bcard:74px;position:relative;display:grid;
+    grid-template-columns:minmax(118px,.85fr) minmax(0,2.2fr) minmax(118px,.85fr);grid-template-rows:auto auto auto;
+    grid-template-areas:"oppside oppbench opppiles" "midl actives midr" "youside youbench youpiles";
+    gap:10px;padding:16px;border-radius:22px;
+    background:radial-gradient(circle at 50% 50%,rgba(14,165,183,.08),transparent 40%),linear-gradient(180deg,#eef6fc,#e7f0f8);
+    border:1px solid #d3e0ec;box-shadow:inset 0 0 0 2px #ffffffcc,0 12px 34px #0b346b16;overflow:hidden;}
+  .playmat::before{content:"";position:absolute;left:50%;top:50%;width:150px;height:150px;transform:translate(-50%,-50%);z-index:0;opacity:.4;
+    border-radius:50%;border:9px solid #b9cbe0;background:linear-gradient(#0000 calc(50% - 5px),#b9cbe0 calc(50% - 5px) calc(50% + 5px),#0000 calc(50% + 5px));}
+  .playmat>*{position:relative;z-index:1;min-width:0;}
+  #oppSide{grid-area:oppside}#oppBench{grid-area:oppbench}#oppPiles{grid-area:opppiles}
+  #actives{grid-area:actives}#youSide{grid-area:youside}#youBench{grid-area:youbench}#youPiles{grid-area:youpiles}
+  .zone-bench{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;min-height:calc(var(--bcard)*1.45);border-radius:14px;padding:6px;}
+  .zone-bench.you{background:#ffffff66;outline:1px dashed #bcd0e6;}
+  .zone-actives{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;}
+  .midline{font-weight:800;color:#9fb3c7;font-size:12px;letter-spacing:.18em;}
+  .zone-side{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;}
+  .sblabel{font-size:11px;color:var(--sub);font-weight:700;margin-bottom:3px;text-align:center;}
+  .prizegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;}
+  .prizeback{width:20px;height:28px;border-radius:3px;background:linear-gradient(135deg,#5b8def,#274a9e);box-shadow:0 1px 3px #0b346b40;}
+  .pile{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:56px;padding:7px 8px;border-radius:10px;background:#ffffffcc;border:1px solid var(--line);}
+  .pile .pcount{font-size:16px;font-weight:800;color:var(--ink);}.pile .plabel{font-size:10px;color:var(--sub);font-weight:700;}
+  .playmat .pcard{width:var(--bcard);}.playmat .pcard.imgcard{width:var(--bcard);}
+  .zone-actives .pcard{width:calc(var(--bcard)*1.5);}
+  .playmat .empty-c{width:var(--bcard);height:calc(var(--bcard)*1.36);font-size:10px;}
+  .zone-actives .empty-c{width:calc(var(--bcard)*1.5);height:calc(var(--bcard)*1.5*1.36);}
+  .handzone{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;margin-top:12px;}
+  .handlabel{font-size:12px;color:var(--sub);font-weight:700;margin:0 0 8px;}
+  .handlabel.opp{margin-top:12px;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="replayWrap">
+  <aside class="logListPanel">
+    <h3>対戦ログ一覧</h3>
+    <div id="logList"><div class="hint">読み込み中…</div></div>
+  </aside>
+  <div>
+    <div id="repMeta" class="repMeta">左の一覧から対戦を選んでください。</div>
+    <section class="playmat" id="playmat">
+      <div class="zone-side" id="oppSide"></div>
+      <div class="zone-bench opp" id="oppBench"></div>
+      <div class="zone-side" id="oppPiles"></div>
+      <div class="zone-actives" id="actives">
+        <div><div id="oppActive"></div></div>
+        <div class="midline">VS</div>
+        <div><div id="youActive"></div></div>
+      </div>
+      <div class="zone-side" id="youSide"></div>
+      <div class="zone-bench you" id="youBench"></div>
+      <div class="zone-side" id="youPiles"></div>
+    </section>
+    <div class="handzone">
+      <div class="handlabel" id="oppHandLabel">相手の手札</div>
+      <div class="row" id="oppHand"></div>
+      <div class="handlabel you" id="youHandLabel">自分の手札</div>
+      <div class="row" id="youHand"></div>
+    </div>
+    <div class="repControls" id="repControls"></div>
+    <div class="repLog"><h2>対戦ログ</h2><div id="repLogBody"></div></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+const ENE_ICON={GRASS:'🍃',FIRE:'🔥',WATER:'💧',LIGHTNING:'⚡',PSYCHIC:'🔮',FIGHTING:'👊',DARKNESS:'🌙',METAL:'⚙️',DRAGON:'🐉',COLORLESS:'⭐',RAINBOW:'🌈',TEAM_ROCKET:'🚀'};
+let FRAMES=[], idx=0, playing=false, timer=null, spd=1, META=null;
+
+function eneIcons(types,energy){
+  if(Array.isArray(types)&&types.length)return types.map(e=>`<span class="enei">${(ENE_ICON[e.type]||'⭐').repeat(e.count)}</span>`).join('');
+  return '●'.repeat(energy||0);
+}
+function tile(c,o={}){
+  if(!c)return '<div class="empty-c">なし</div>';
+  const t=c.type||'COLORLESS';const {active=false,hp=null,maxHp=null,energy=null,energyTypes=null}=o;
+  let ov='';
+  if(hp!=null&&maxHp!=null){const p=Math.max(0,Math.round(100*hp/maxHp));
+    ov=`<div class="ov"><div class="ovln"><span>HP ${hp}/${maxHp}</span><span class="ovene">${eneIcons(energyTypes,energy)}</span></div><div class="hpbar"><i style="width:${p}%"></i></div></div>`;}
+  if(c.img)return `<div class="pcard imgcard ${active?'active':''}"><img class="full" src="${c.img}" loading="lazy" draggable="false">${ov}</div>`;
+  let hpln=(hp!=null&&maxHp!=null)?`<div class="ln"><span>HP</span><span>${hp}/${maxHp}</span></div>`:'';
+  return `<div class="pcard ${active?'active':''}"><div class="bar c-${t}"></div><div class="bd"><div class="nm">${c.name}</div><div class="art a-${t}">${ICON[t]||'⭐'}</div>${hpln}<div class="ene">${eneIcons(energyTypes,energy)}</div></div></div>`;
+}
+function benchHtml(bench){const s=(bench||[]).map(b=>b?tile(b,{hp:b.hp,maxHp:b.maxHp,energy:b.energy,energyTypes:b.energyTypes}):'<div class="empty-c">－</div>');return s.length?s.join(''):'<div class="empty-c">ベンチなし</div>';}
+function sideHtml(s){const backs=Array.from({length:Math.max(0,s.prize)},()=>'<div class="prizeback"></div>').join('');
+  return `<div><div class="sblabel">サイド ${s.prize}</div><div class="prizegrid">${backs}</div></div><div class="pile"><span class="pcount">${s.deck}</span><span class="plabel">山札</span></div>`;}
+function pilesHtml(s){const cond=s.conditions&&s.conditions.length?`<div class="pile" style="border-color:#f0b4be"><span class="plabel" style="color:#e0556b">${s.conditions.join(' ')}</span></div>`:'';
+  return `<div class="pile"><span class="pcount">${s.discard}</span><span class="plabel">トラッシュ</span></div>${cond}`;}
+function handHtml(hand){return (hand&&hand.length)?hand.map(c=>tile(c,{})).join(''):'<span class="hint">なし</span>';}
+
+function renderBoard(b){
+  document.getElementById('turnInfo').textContent=`ターン ${b.turn}`;
+  const oa=b.opp.active, ya=b.you.active;
+  document.getElementById('oppActive').innerHTML=tile(oa,{active:true,hp:oa&&oa.hp,maxHp:oa&&oa.maxHp,energy:oa&&oa.energy,energyTypes:oa&&oa.energyTypes});
+  document.getElementById('youActive').innerHTML=tile(ya,{active:true,hp:ya&&ya.hp,maxHp:ya&&ya.maxHp,energy:ya&&ya.energy,energyTypes:ya&&ya.energyTypes});
+  document.getElementById('oppBench').innerHTML=benchHtml(b.opp.bench);
+  document.getElementById('youBench').innerHTML=benchHtml(b.you.bench);
+  document.getElementById('oppSide').innerHTML=sideHtml(b.opp);
+  document.getElementById('youSide').innerHTML=sideHtml(b.you);
+  document.getElementById('oppPiles').innerHTML=pilesHtml(b.opp);
+  document.getElementById('youPiles').innerHTML=pilesHtml(b.you);
+  document.getElementById('oppHand').innerHTML=handHtml(b.opp.hand);
+  document.getElementById('youHand').innerHTML=handHtml(b.you.hand);
+}
+function pushLog(ev){const body=document.getElementById('repLogBody');const d=document.createElement('div');d.className='ev '+(ev.who||'sys');d.textContent=(ev.turn!=null?`[T${ev.turn}] `:'')+ev.text;body.appendChild(d);body.scrollTop=body.scrollHeight;}
+function rebuildLog(upto){const body=document.getElementById('repLogBody');body.innerHTML='';for(let k=0;k<=upto&&k<FRAMES.length;k++)(FRAMES[k].events||[]).forEach(pushLog);}
+
+function showFrame(i){idx=Math.max(0,Math.min(FRAMES.length-1,i));if(FRAMES[idx])renderBoard(FRAMES[idx].board);rebuildLog(idx);renderControls();}
+function renderControls(){
+  const box=document.getElementById('repControls');
+  if(!FRAMES.length){box.innerHTML='<div class="hint">対戦を選択してください。</div>';return;}
+  const spdBtns=[1,2,3,5,10].map(m=>`<button class="spd2${spd===m?' on':''}" data-m="${m}">${m}x</button>`).join('');
+  box.innerHTML=`
+    <button id="rPrev">◀ 前</button>
+    <button id="rPlay">${playing?'⏸ 一時停止':'▶ 再生'}</button>
+    <button id="rNext">次 ▶</button>
+    <input type="range" id="rSlider" min="0" max="${FRAMES.length-1}" value="${idx}">
+    <span class="hint">${idx+1} / ${FRAMES.length}</span>
+    <span>速度 ${spdBtns}</span>`;
+  document.getElementById('rPrev').onclick=()=>{pause();showFrame(idx-1);};
+  document.getElementById('rNext').onclick=()=>{pause();showFrame(idx+1);};
+  document.getElementById('rPlay').onclick=()=>playing?pause():play();
+  document.getElementById('rSlider').oninput=e=>{pause();showFrame(+e.target.value);};
+  box.querySelectorAll('button.spd2').forEach(b=>b.onclick=()=>{spd=+b.dataset.m;renderControls();});
+}
+function play(){if(idx>=FRAMES.length-1)idx=-1;playing=true;renderControls();stepPlay();}
+function pause(){playing=false;if(timer){clearTimeout(timer);timer=null;}renderControls();}
+function stepPlay(){
+  if(!playing)return;
+  if(idx>=FRAMES.length-1){pause();return;}
+  idx++;renderBoard(FRAMES[idx].board);(FRAMES[idx].events||[]).forEach(pushLog);renderControls();
+  timer=setTimeout(stepPlay, Math.max(120, 900/spd));
+}
+
+async function loadLog(file, el){
+  pause();
+  document.querySelectorAll('.logItem').forEach(x=>x.classList.remove('sel'));
+  if(el)el.classList.add('sel');
+  const d=await get('/api/logs/'+encodeURIComponent(file));
+  META=d; FRAMES=d.frames||[];
+  document.getElementById('repMeta').textContent=`${d.player0} vs ${d.player1} ／ 勝者: ${d.winner}（${FRAMES.length}フレーム）`;
+  document.getElementById('repLogBody').innerHTML='';
+  if(!FRAMES.length){document.getElementById('repMeta').textContent+=' ※リプレイ用フレームがありません（この機能の追加より前の対戦）';}
+  idx=0; showFrame(0);
+}
+function fmtTime(s){if(!s)return '';return s.replace('T',' ').split('.')[0]+' UTC';}
+async function loadList(){
+  const d=await get('/api/logs');
+  const box=document.getElementById('logList');
+  if(!d.logs||!d.logs.length){box.innerHTML='<div class="hint">保存された対戦ログがありません。対戦を最後まで進めると保存されます。</div>';return;}
+  box.innerHTML='';
+  d.logs.forEach(l=>{
+    const el=document.createElement('div');el.className='logItem';
+    el.innerHTML=`<div class="vs">${l.player0}<br>vs ${l.player1}</div>
+      <div class="meta">${({human:'人 vs AI',ai:'AI vs AI',pvp:'人 vs 人'})[l.mode]||l.mode}／勝者:${l.winner}<br>${fmtTime(l.finished_at)}・${l.frames}フレーム</div>`;
+    el.onclick=()=>loadLog(l.file, el);
+    box.appendChild(el);
+  });
+}
+renderControls();
+loadList();
+</script>
+{% endblock %}

@@ -74,6 +74,7 @@ def _new_game_state(gid):
             "labels": {},          # playerIndex -> 表示名
             # --- ログ保存用 ---
             "log": [],             # 対戦全体のイベント蓄積 [{turn,who,text}]
+            "frames": [],          # リプレイ用の盤面スナップショット列
             "started_at": datetime.now(timezone.utc).isoformat(),
             "log_saved": False}
 
@@ -304,6 +305,43 @@ def _collect_events(g, obs):
         pass
 
 
+def _frame_board(g):
+    """リプレイ用に、現在の盤面スナップショット（両プレイヤー絶対index 0/1）を作る。"""
+    ob = to_observation_class(g["obs"])
+    st = ob.current
+    if st is None:
+        return None
+
+    def side(idx):
+        p = st.players[idx]
+        act = p.active[0] if p.active and p.active[0] else None
+        hand = ([card_meta(c.id) for c in p.hand]
+                if p.hand is not None else g["hand_cache"].get(idx))
+        return {
+            "active": _poke_json(act),
+            "bench": [_poke_json(b) for b in p.bench],
+            "handCount": p.handCount, "deck": p.deckCount,
+            "prize": len(p.prize), "discard": len(p.discard),
+            "hand": hand,
+            "discardList": [card_meta(c.id) for c in p.discard],
+            "conditions": [c for c, v in (("どく", p.poisoned), ("やけど", p.burned),
+                           ("ねむり", p.asleep), ("まひ", p.paralyzed),
+                           ("こんらん", p.confused)) if v],
+        }
+    return {"turn": st.turn, "you": side(0), "opp": side(1)}
+
+
+def _capture_frame(g):
+    """1手ぶんのスナップショット（盤面＋その間のイベント）をリプレイ用に記録。"""
+    try:
+        b = _frame_board(g)
+        if b is not None:
+            g["frames"].append({"board": b, "events": list(g.get("events", [])),
+                                "result": g.get("result", -1)})
+    except Exception:
+        pass
+
+
 def _save_match_log(g):
     """対戦終了時に、対戦ログを data/logs/ に1ファイルとして保存する。"""
     if g.get("log_saved"):
@@ -327,6 +365,7 @@ def _save_match_log(g):
             "result": result, "winner": winner,
             "started_at": g.get("started_at"), "finished_at": finished,
             "log": g.get("log", []),
+            "frames": g.get("frames", []),
         }
         path = LOGS_DIR / f"{ts}_{g.get('mode')}_{g.get('gid', '')[:8]}.json"
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -387,6 +426,7 @@ def _advance_until_human(g):
     g["obs"] = obs
     # 最終 obs のログ（＝前回選択以降の全出来事）だけを記録
     _collect_events(g, g["obs"])
+    _capture_frame(g)  # リプレイ用スナップショット
     if g.get("result", -1) != -1:
         _save_match_log(g)
 
@@ -553,6 +593,43 @@ def battle():
 @app.route("/join")
 def join():
     return render_template("join.html")
+
+
+@app.route("/replay")
+def replay():
+    return render_template("replay.html")
+
+
+@app.route("/api/logs", methods=["GET"])
+def api_logs():
+    """保存済み対戦ログ（.json）の一覧を返す。"""
+    items = []
+    if LOGS_DIR.exists():
+        for p in sorted(LOGS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+            try:
+                d = json.loads(p.read_text(encoding="utf-8"))
+                items.append({"file": p.stem, "mode": d.get("mode"),
+                              "player0": d.get("player0"), "player1": d.get("player1"),
+                              "winner": d.get("winner"), "result": d.get("result"),
+                              "finished_at": d.get("finished_at"),
+                              "frames": len(d.get("frames") or [])})
+            except Exception:
+                pass
+    return jsonify({"logs": items})
+
+
+@app.route("/api/logs/<name>", methods=["GET"])
+def api_log(name):
+    """1対戦ぶんのログ（frames込み）を返す。"""
+    if not name.replace("_", "").isalnum():
+        abort(404)
+    p = LOGS_DIR / (name + ".json")
+    if not p.exists():
+        abort(404)
+    try:
+        return jsonify(json.loads(p.read_text(encoding="utf-8")))
+    except Exception:
+        abort(404)
 
 
 def _agents_with_cards():
