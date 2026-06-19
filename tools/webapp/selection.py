@@ -260,24 +260,96 @@ def extract_agent_code_from_ipynb(text: str) -> str:
     return code
 
 
-def parse_decklist_comments(code: str) -> list[int] | None:
-    """エージェントのコードから「カードID = 枚数」のデッキリスト注記を復元する。
+_DECK_VAR_RE = re.compile(r"deck|decklist|cards", re.I)
 
-    `Makuhita = 673  # ×2` / `Switch = 1123  # x2` のような行を集計する。
-    合計がちょうど60枚になった場合のみデッキとして採用する（誤検出を避けるため）。
+
+def _eval_int(node, symbols):
+    """ast ノードを int に評価（整数リテラル or 整数を指す変数名）。無理なら None。"""
+    import ast
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return node.value
+    if isinstance(node, ast.Name):
+        return symbols.get(node.id)
+    return None
+
+
+def _eval_int_list(node, symbols):
+    """ast ノードを int のリストに評価（[id…]/[id]*n/連結+、要素は数値 or 変数名）。"""
+    import ast
+    if isinstance(node, ast.List):
+        out = []
+        for el in node.elts:
+            v = _eval_int(el, symbols)
+            if v is None:
+                return None
+            out.append(v)
+        return out
+    if isinstance(node, ast.BinOp):
+        if isinstance(node.op, ast.Add):
+            left = _eval_int_list(node.left, symbols)
+            right = _eval_int_list(node.right, symbols)
+            return None if left is None or right is None else left + right
+        if isinstance(node.op, ast.Mult):
+            for a, b in ((node.left, node.right), (node.right, node.left)):
+                lst = _eval_int_list(a, symbols)
+                cnt = _eval_int(b, symbols)
+                if lst is not None and cnt is not None:
+                    return lst * cnt
+            return None
+    return None
+
+
+def _deck_from_list_literal(code: str):
+    """`DECK = [...]` / `my_deck = [DREEPY, ...] * n + ...` のリスト定義からデッキを復元する。
+
+    `DREEPY = 123` のような「変数名=整数」も対応表として解決する。
+    """
+    import ast
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return None
+    symbols = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, int):
+                symbols[node.targets[0].id] = node.value.value
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        if not any(_DECK_VAR_RE.search(n) for n in names):
+            continue
+        vals = _eval_int_list(node.value, symbols)
+        if vals and len(vals) == 60:
+            try:
+                validate_deck_for_builder(vals)
+                return vals
+            except SelectionError:
+                continue
+    return None
+
+
+def parse_decklist_comments(code: str) -> list[int] | None:
+    """エージェントのコードからデッキ(60枚のID列)を静的に復元する。
+
+    対応する記法:
+      1. `Makuhita = 673  # ×2` / `Switch = 1123  # x2` のコメント注記
+      2. `DECK = [...]` / `my_deck = [673]*2 + [674]*2 + ...` のリスト定義
+    どちらも合計60枚・使用可能カードのときのみ採用する（誤検出を避けるため）。
     """
     deck: list[int] = []
     for line in code.splitlines():
         m = re.search(r"=\s*(\d+)\s*#\s*[×xX*]\s*(\d+)", line)
         if m:
             deck.extend([int(m.group(1))] * int(m.group(2)))
-    if len(deck) != 60:
-        return None
-    try:
-        validate_deck_for_builder(deck)
-    except SelectionError:
-        return None
-    return deck
+    if len(deck) == 60:
+        try:
+            validate_deck_for_builder(deck)
+            return deck
+        except SelectionError:
+            pass
+    return _deck_from_list_literal(code)
 
 
 def load_custom_agent(path: str | Path) -> AgentFunc:
@@ -410,3 +482,17 @@ def read_user_agent_code(agent_id: str, agents_dir: Path | None = None) -> str:
 def delete_user_agent(agent_id: str, agents_dir: Path | None = None) -> None:
     import shutil
     shutil.rmtree(user_agent_dir(agent_id, agents_dir), ignore_errors=True)
+
+
+def update_user_agent_deck(agent_id, deck, source, agents_dir=None):
+    """登録AIの meta.json にデッキ(60枚)を後から設定する（登録時のAI問い合わせ結果など）。"""
+    d = user_agent_dir(agent_id, agents_dir)
+    meta_path = d / "meta.json"
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, FileNotFoundError):
+        meta = {"id": agent_id, "name": agent_id}
+    meta["deck"] = deck_card_counts(deck)
+    meta["deck_source"] = source
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return meta

@@ -38,3 +38,5 @@ prompt.txt
 
 # カード画像（著作権・大容量。履歴から除外。ローカル/ビルドには残す）
 data/card_images/
+
+.DS_Store

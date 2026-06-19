@@ -29,6 +29,9 @@
 
   <div class="sect">サンプルデッキ</div>
   <div id="sampleDecks" class="deckGrid"></div>
+
+  <div class="sect">登録AIのデッキ</div>
+  <div id="agentDecks" class="deckGrid"></div>
 </div>
 {% endblock %}
 
@@ -50,9 +53,19 @@ function renderDecks(boxId, decks, opts){
       <div class="cards">${deckCardsHtml(d.cards)}</div>
     </div>`).join('');
 }
+function renderAgentDecks(agents){
+  const box=document.getElementById('agentDecks');
+  if(!agents||!agents.length){box.innerHTML='<div class="emptyNote">登録AIがありません。「AIエージェント登録」から追加できます。</div>';return;}
+  box.innerHTML=agents.map(a=>{
+    const body=(a.cards&&a.cards.length)?`<div class="cards">${deckCardsHtml(a.cards)}</div>`
+      :'<div class="hint">デッキはファイルから読み取れません（対戦開始時にAIが決定）。</div>';
+    return `<div class="deckTile"><h3>🤖 ${a.name}</h3><div class="desc">${a.deck_source||''}</div>${body}</div>`;
+  }).join('');
+}
 get('/api/config').then(c=>{
   renderDecks('userDecks', c.userDecks||[], {empty:'保存済みデッキはまだありません。「＋ 新しいデッキを作成」から作れます。'});
   renderDecks('sampleDecks', c.sampleDecks||[], {empty:'サンプルデッキがありません。'});
+  renderAgentDecks(c.agents||[]);
 });
 </script>
 {% endblock %}

@@ -32,7 +32,7 @@ from selection import (  # noqa: E402
     list_user_decks, load_custom_agent, parse_decklist_comments, parse_deck_csv_text,
     preview_agent_upload, read_sample_deck, read_user_agent_code, read_user_deck,
     sample_deck_options, save_user_agent, save_user_deck,
-    validate_ai_picks, validate_deck_for_builder,
+    update_user_agent_deck, validate_ai_picks, validate_deck_for_builder,
 )
 from sim_env import (  # noqa: E402
     to_observation_class, battle_start, battle_select, battle_finish,
@@ -146,13 +146,26 @@ def _decode_upload(file_storage, label):
         raise SelectionError(f"{label}ファイルはUTF-8のCSV/Pythonファイルにしてください。") from exc
 
 
-def _selected_deck(mode_field, sample_id_field, user_id_field, file_field):
+def _agent_deck_list(agent_id):
+    """登録AIのファイル内デッキ（60枚のID列）を返す。取得不可なら SelectionError。"""
+    deck = parse_decklist_comments(read_user_agent_code(agent_id))
+    if not deck:
+        raise SelectionError("この登録AIのデッキは使えません（ファイルから読み取れず、対戦時にAIが決定するタイプ）。別のデッキを選んでください。")
+    return deck
+
+
+def _selected_deck(mode_field, sample_id_field, user_id_field, file_field, agent_id_field=None):
     """フォームのフィールド名群からデッキを選ぶ（自分・相手で共通利用）。
 
-    mode: sample / user / custom。未指定や不明なら sample 扱い。
+    mode: sample / user / custom / agent（登録AIのデッキを流用）。未指定や不明なら sample 扱い。
     戻り値は (デッキ(list[int]), 表示ラベル)。
     """
     mode = request.form.get(mode_field, "sample")
+    if mode == "agent" and agent_id_field:
+        aid = request.form.get(agent_id_field) or ""
+        deck = _agent_deck_list(aid)
+        name = next((a["name"] for a in list_user_agents() if a["id"] == aid), aid)
+        return deck, f"登録AIのデッキ（{name}）"
     if mode == "custom":
         deck_file = request.files.get(file_field)
         deck = parse_deck_csv_text(_decode_upload(deck_file, "デッキCSV"))
@@ -170,7 +183,8 @@ def _selected_deck(mode_field, sample_id_field, user_id_field, file_field):
 
 
 def _selected_player_deck():
-    return _selected_deck("deck_mode", "deck_id", "user_deck_id", "deck_file")
+    return _selected_deck("deck_mode", "deck_id", "user_deck_id", "deck_file",
+                          agent_id_field="deck_agent_id")
 
 
 def _agent_initial_observation():
@@ -271,6 +285,7 @@ def _selected_opponent(gid, default_deck):
             deck, deck_name = _selected_deck(
                 "opponent_deck_mode", "opponent_deck_id",
                 "opponent_user_deck_id", "opponent_deck_file",
+                agent_id_field="opponent_deck_agent_id",
             )
             return "rule", None, deck, f"ルールベースAI（{deck_name}）"
         return "rule", None, list(default_deck), "ルールベースAI"
@@ -290,6 +305,86 @@ def _selected_player_agent_side(gid):
     agent, deck, label = _load_agent_side(
         gid, "player", ptype, "player_agent_file", "player_agent_id", default_deck)
     return "custom", agent, deck, label
+
+
+def _resolve_registered_agent_deck(aid):
+    """登録時、静的に読めなかったAIに初期デッキを問い合わせて meta に保存する。
+
+    サンプルデッキを置いてエージェントに初期デッキを尋ね、サンプルと異なる60枚を
+    返したらそれを保存する（deck.csv をそのまま読むタイプはサンプルに一致するので保存しない）。
+    """
+    try:
+        d = Path(tempfile.gettempdir()) / "pokemon_competition_register_probe" / aid
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "main.py").write_text(read_user_agent_code(aid), encoding="utf-8")
+        sample = read_sample_deck(SAMPLE_DECKS[0]["id"])
+        deck = _ask_agent_for_deck(d, sample)
+        if sorted(deck) == sorted(sample):
+            return None  # サンプルそのまま＝deck.csv読み込み型。確定できない。
+        return update_user_agent_deck(aid, deck, "AIが決定（登録時取得）")
+    except Exception:
+        return None
+
+
+def _load_registered_agent(aid):
+    """登録AIを読み込み {agent,deck} を返す（総当たり用）。"""
+    code = read_user_agent_code(aid)
+    d = Path(tempfile.gettempdir()) / "pokemon_competition_tournament" / aid
+    if d.exists():
+        shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "main.py").write_text(code, encoding="utf-8")
+    deck = parse_decklist_comments(code)
+    if deck is None:
+        deck = _ask_agent_for_deck(d, read_sample_deck(SAMPLE_DECKS[0]["id"]))
+    (d / "deck.csv").write_text("\n".join(str(c) for c in deck) + "\n", encoding="utf-8")
+    agent = _import_agent_in_dir(d)
+    return {"agent": agent, "deck": deck}
+
+
+def _headless_pick(side, sel, obs, rng):
+    """総当たり用: そのサイドのAIで選択（失敗時はランダムにフォールバック）。"""
+    n = len(sel.option)
+    if side.get("agent"):
+        try:
+            return validate_ai_picks(side["agent"](obs), sel.minCount, sel.maxCount, n)
+        except Exception:
+            pass
+    k = rng.randint(sel.minCount, min(sel.maxCount, n))
+    return rng.sample(range(n), k)
+
+
+def _run_headless_match(p0, p1, rng, max_steps=20000):
+    """2エージェントを最後まで対戦させ、勝者index(0/1)/引き分け(-1)を返す。"""
+    obs, start = battle_start(p0["deck"], p1["deck"])
+    if obs is None:
+        return None
+    set_active_battle(start.battlePtr)
+    result = -1
+    try:
+        for _ in range(max_steps):
+            cur = obs.get("current")
+            if cur is not None and cur.get("result", -1) != -1:
+                result = cur["result"]
+                break
+            if obs.get("select") is None:
+                break
+            ob = to_observation_class(obs)
+            sel = ob.select
+            you = ob.current.yourIndex if ob.current else 0
+            if int(sel.context) == int(SelectContext.IS_FIRST):
+                picks = [rng.randint(0, len(sel.option) - 1)]
+            else:
+                picks = _headless_pick(p0 if you == 0 else p1, sel, obs, rng)
+            obs = battle_select(picks)
+    finally:
+        try:
+            battle_finish()
+        except Exception:
+            pass
+    return result
 
 
 def _collect_events(g, obs):
@@ -600,6 +695,55 @@ def replay():
     return render_template("replay.html")
 
 
+@app.route("/tournament")
+def tournament():
+    return render_template("tournament.html")
+
+
+@app.route("/api/tournament", methods=["POST"])
+def api_tournament():
+    """登録AIの総当たり戦（各ペアを home/away の2試合）を実行して結果を返す。"""
+    metas = list_user_agents()
+    if len(metas) < 2:
+        return _selection_error("総当たりには登録AIが2体以上必要です。")
+    rng = random.Random()
+    loaded = []
+    for m in metas:
+        try:
+            a = _load_registered_agent(m["id"])
+            a["name"], a["id"] = m["name"], m["id"]
+            loaded.append(a)
+        except SelectionError:
+            pass
+    n = len(loaded)
+    stand = {a["id"]: {"name": a["name"], "wins": 0, "losses": 0, "draws": 0, "games": 0}
+             for a in loaded}
+    matches = []
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            p0, p1 = loaded[i], loaded[j]
+            res = _run_headless_match(p0, p1, rng)
+            winner = p0["name"] if res == 0 else (p1["name"] if res == 1 else "引き分け")
+            matches.append({"p0": p0["name"], "p1": p1["name"], "result": res, "winner": winner})
+            for p in (p0, p1):
+                stand[p["id"]]["games"] += 1
+            if res == 0:
+                stand[p0["id"]]["wins"] += 1
+                stand[p1["id"]]["losses"] += 1
+            elif res == 1:
+                stand[p1["id"]]["wins"] += 1
+                stand[p0["id"]]["losses"] += 1
+            else:
+                stand[p0["id"]]["draws"] += 1
+                stand[p1["id"]]["draws"] += 1
+    standings = sorted(stand.values(), key=lambda s: (-s["wins"], s["losses"]))
+    for s in standings:
+        s["winRate"] = round(100 * s["wins"] / s["games"]) if s["games"] else 0
+    return jsonify({"n": n, "standings": standings, "matches": matches})
+
+
 @app.route("/api/logs", methods=["GET"])
 def api_logs():
     """保存済み対戦ログ（.json）の一覧を返す。"""
@@ -674,6 +818,9 @@ def api_save_agent():
         raw = _decode_upload(src, "AIエージェント")
         name = request.form.get("name") or src.filename
         meta = save_user_agent(name, src.filename, raw)
+        # ②静的に読めなかった場合、AIに初期デッキを問い合わせて保存を試みる
+        if not meta.get("deck"):
+            meta = _resolve_registered_agent_deck(meta["id"]) or meta
         return jsonify({**meta, "cards": _deck_preview(meta["deck"]) if meta.get("deck") else None})
     except SelectionError as exc:
         return _selection_error(str(exc))
