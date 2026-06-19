@@ -40,3 +40,7 @@ prompt.txt
 data/card_images/
 
 .DS_Store
+
+# 本番Basic認証の資格情報(VPSのみ・git管理外)
+.env.caddy
+.env

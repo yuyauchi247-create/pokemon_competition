@@ -5,6 +5,12 @@
 # 証明書取得には 80/443 が公開されている必要がある。
 
 mypokeca.com {
+	# Basic 認証（ユーザー名/bcryptハッシュは環境変数で注入）。
+	# 値は VPS 上の .env.caddy で与える（git 管理外）。
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
 	reverse_proxy webapp:5000
 
 	# 簡易アクセスログ（必要なら）
