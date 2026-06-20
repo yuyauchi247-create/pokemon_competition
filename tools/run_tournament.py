@@ -92,6 +92,17 @@ def _silence_fds():
     os.close(devnull)
 
 
+def _write_progress(path, done, total):
+    """進捗をJSONファイルに書き出す（UIのプログレスバー用）。"""
+    if not path:
+        return
+    try:
+        Path(path).write_text(json.dumps({"done": done, "total": total}),
+                              encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _run_task(task):
     """ワーカー: (i, j) の1試合を実行して (i, j, result) を返す。
 
@@ -188,6 +199,8 @@ def main():
                          "対フィールド勝率と相手別内訳を出す（O(N)で安い）")
     ap.add_argument("--sequential", action="store_true",
                     help="1コアで順次実行（並列結果との照合用）")
+    ap.add_argument("--progress-file", default="",
+                    help="進捗(JSON: {done,total})を書き出すファイル（UIのバー用）")
     ap.add_argument("--out", default=str(ROOT / "data" / "tournament_result.json"))
     args = ap.parse_args()
 
@@ -230,6 +243,8 @@ def main():
     print(f"{len(tasks)} matches ({g_per}/pair), workers={workers}, "
           f"timeout={MATCH_TIMEOUT}s", flush=True)
 
+    total = len(tasks)
+    _write_progress(args.progress_file, 0, total)
     results = []
     t0 = time.time()
     if args.sequential:
@@ -237,8 +252,10 @@ def main():
         saved = os.dup(1), os.dup(2)
         _silence_fds()
         try:
-            for tk in tasks:
+            for k, tk in enumerate(tasks, 1):
                 results.append(_run_task(tk))
+                if k % 10 == 0:
+                    _write_progress(args.progress_file, k, total)
         finally:
             os.dup2(saved[0], 1)
             os.dup2(saved[1], 2)
@@ -252,9 +269,12 @@ def main():
             for r in pool.imap_unordered(_run_task, tasks, chunksize=1):
                 results.append(r)
                 done += 1
+                if done % 20 == 0:
+                    _write_progress(args.progress_file, done, total)
                 if done % 50 == 0:
-                    print(f"  {done}/{len(tasks)} ({time.time() - t0:.0f}s)",
+                    print(f"  {done}/{total} ({time.time() - t0:.0f}s)",
                           flush=True)
+    _write_progress(args.progress_file, total, total)
     dt = time.time() - t0
     print(f"done {len(results)} matches in {dt:.1f}s "
           f"({dt / max(1, len(results)) * 1000:.0f} ms/match wall)", flush=True)
