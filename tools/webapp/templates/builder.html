@@ -102,9 +102,14 @@ async function openBuilderCard(cid, readonly){
   const maxed=(!BASIC_ENERGY.has(cid)&&cnt>=4)||(ACE_SPEC_IDS.has(cid)&&(cnt>=1||deckHasAceSpec()));
   const addDisabled=maxed||CURRENT_DECK.length>=60;
   const addLabel=maxed?(ACE_SPEC_IDS.has(cid)?'ACE SPEC上限です':'4枚上限です'):CURRENT_DECK.length>=60?'60枚上限です':`デッキに追加（現在 ×${cnt}）`;
+  const limitMsg=addDisabled?(maxed?(ACE_SPEC_IDS.has(cid)?'（ACE SPECは1枚まで）':'（同名4枚まで）'):'（60枚に到達）'):'';
   const editBtns=readonly?'':
-    `<button ${addDisabled?'disabled':''} id="modalAddBtn">${addLabel}</button>`+
-    (cnt>0?`<button class="gray" id="modalRemoveBtn">デッキから1枚減らす（現在 ×${cnt}）</button>`:'');
+    `<div class="qtyStep">
+       <button class="gray qtyBtn" id="modalDecBtn" ${cnt<=0?'disabled':''}>‹</button>
+       <span class="qtyNum">デッキ内 ×${cnt}</span>
+       <button class="qtyBtn" id="modalIncBtn" ${addDisabled?'disabled':''}>›</button>
+       <span class="hint">${limitMsg}</span>
+     </div>`;
   document.getElementById('modal').innerHTML=`
     <span class="mtype ${chipCls}">${chip}</span>
     <h3>${c.name} ${c.flags?.length?`<small style="color:#b8860b">${c.flags.join(' ')}</small>`:''}</h3>
@@ -116,10 +121,10 @@ async function openBuilderCard(cid, readonly){
       ${editBtns}
       <button class="gray" onclick="closeModal()">閉じる</button>
     </div>`;
-  const btn=document.getElementById('modalAddBtn');
-  if(btn&&!addDisabled) btn.onclick=()=>{addCard(cid);openBuilderCard(cid);};
-  const rbtn=document.getElementById('modalRemoveBtn');
-  if(rbtn) rbtn.onclick=()=>{removeCard(cid);openBuilderCard(cid);};
+  const inc=document.getElementById('modalIncBtn');
+  if(inc&&!addDisabled) inc.onclick=()=>{addCard(cid);openBuilderCard(cid, readonly);};
+  const dec=document.getElementById('modalDecBtn');
+  if(dec&&cnt>0) dec.onclick=()=>{removeCard(cid);openBuilderCard(cid, readonly);};
   showModal();
 }
 function addCard(id){

@@ -15,7 +15,7 @@ WORKDIR /app
 # 実行時に必要なのは flask のみ（kaggle/pymupdf は実対戦では不要）。
 # 本番(compose.prod.yaml)では gunicorn 経由で起動するため同梱しておく。
 # pandas/numpy は一部の登録AIが import するため同梱（無いとロードに失敗する）。
-RUN pip install --no-cache-dir "flask>=3.1.3" "gunicorn>=21.2" "numpy" "pandas"
+RUN pip install --no-cache-dir --timeout 300 --retries 10 "flask>=3.1.3" "gunicorn>=21.2" "numpy" "pandas"
 
 # アプリ一式をコピー
 COPY . /app
