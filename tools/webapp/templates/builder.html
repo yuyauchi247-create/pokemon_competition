@@ -77,7 +77,7 @@ function renderCardLibrary(){
   }).join('')||'<div class="hint">該当カードがありません</div>';
   document.querySelectorAll('#cardLibrary .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id));
 }
-async function openBuilderCard(cid){
+async function openBuilderCard(cid, readonly){
   const c=await get('/api/card/'+cid);
   const t=c.type||'COLORLESS';
   const counts=deckCounts();
@@ -102,6 +102,9 @@ async function openBuilderCard(cid){
   const maxed=(!BASIC_ENERGY.has(cid)&&cnt>=4)||(ACE_SPEC_IDS.has(cid)&&(cnt>=1||deckHasAceSpec()));
   const addDisabled=maxed||CURRENT_DECK.length>=60;
   const addLabel=maxed?(ACE_SPEC_IDS.has(cid)?'ACE SPEC上限です':'4枚上限です'):CURRENT_DECK.length>=60?'60枚上限です':`デッキに追加（現在 ×${cnt}）`;
+  const editBtns=readonly?'':
+    `<button ${addDisabled?'disabled':''} id="modalAddBtn">${addLabel}</button>`+
+    (cnt>0?`<button class="gray" id="modalRemoveBtn">デッキから1枚減らす（現在 ×${cnt}）</button>`:'');
   document.getElementById('modal').innerHTML=`
     <span class="mtype ${chipCls}">${chip}</span>
     <h3>${c.name} ${c.flags?.length?`<small style="color:#b8860b">${c.flags.join(' ')}</small>`:''}</h3>
@@ -110,8 +113,7 @@ async function openBuilderCard(cid){
     <div class="mrow">デッキ内: ×${cnt}　ID:${cid}</div>
     ${body}
     <div class="acts">
-      <button ${addDisabled?'disabled':''} id="modalAddBtn">${addLabel}</button>
-      ${cnt>0?`<button class="gray" id="modalRemoveBtn">デッキから1枚減らす（現在 ×${cnt}）</button>`:''}
+      ${editBtns}
       <button class="gray" onclick="closeModal()">閉じる</button>
     </div>`;
   const btn=document.getElementById('modalAddBtn');
@@ -193,8 +195,9 @@ function renderHand(){
   box.innerHTML=HAND.map(id=>{
     const c=cardById(id);
     const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name}</div>`;
-    return `<div class="libCard" title="${c.name}">${inner}<div class="nm">${c.name}</div></div>`;
+    return `<div class="libCard" data-id="${id}" title="${c.name}">${inner}<div class="nm">${c.name}</div></div>`;
   }).join('');
+  document.querySelectorAll('#testHand .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id, true));
 }
 function drawOpening(){
   if(!CURRENT_DECK.length){document.getElementById('handInfo').textContent='デッキにカードがありません。';return;}
