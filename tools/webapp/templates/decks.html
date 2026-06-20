@@ -7,14 +7,15 @@
 
 {% block head %}
 <style>
-  .deckGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+  .deckGrid{display:grid;grid-template-columns:1fr;gap:14px;}
   .deckTile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 4px 16px #0b346b0d;}
   .deckTile h3{margin:0 0 2px;font-size:15px;color:var(--ink);}
   .deckTile .desc{font-size:12px;color:var(--sub);margin-bottom:8px;min-height:16px;}
   .deckTile .cards{display:flex;flex-wrap:wrap;gap:5px;}
   .deckTile .sect{font-size:11px;color:var(--teal);font-weight:800;margin:18px 0 8px;}
   .deckActions{display:flex;gap:8px;margin-top:10px;}
-  .deckActions button{font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;}
+  .deckActions button{font-size:12px;padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;cursor:pointer;}
+  .deckActions button:hover{background:#f1f7ff;}
   .deckActions button.danger{color:#9b2a3a;border-color:#f0c4cb;}
 </style>
 {% endblock %}
