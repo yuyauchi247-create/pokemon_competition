@@ -31,7 +31,7 @@ from selection import (  # noqa: E402
     delete_user_agent, extract_agent_code_from_ipynb, list_user_agents,
     list_user_decks, load_custom_agent, parse_decklist_comments, parse_deck_csv_text,
     preview_agent_upload, read_sample_deck, read_user_agent_code,
-    read_user_agent_deck, read_user_deck,
+    read_user_agent_deck, read_user_deck, user_agent_dir,
     sample_deck_options, save_user_agent, save_user_deck,
     update_user_agent_deck, validate_ai_picks, validate_deck_for_builder,
 )
@@ -234,18 +234,36 @@ def _ask_agent_for_deck(agent_dir, default_deck):
         return list(default_deck)
 
 
-def _materialize_agent(gid, side, code, name, default_deck, forced_deck=None):
+def _copy_sibling_modules(src_dir, dst_dir):
+    """登録AIに同梱された別モジュール(*.py)を実行ディレクトリへ複製する。
+
+    MCTS の heuristic.py や FrostWall の value_net.py のように、main.py が
+    同階層の自作モジュールを import するタイプ（複数ファイル提出）に対応する。
+    """
+    if not src_dir:
+        return
+    try:
+        for f in Path(src_dir).glob("*.py"):
+            if f.name != "main.py":
+                shutil.copyfile(f, Path(dst_dir) / f.name)
+    except OSError:
+        pass
+
+
+def _materialize_agent(gid, side, code, name, default_deck, forced_deck=None, extra_src=None):
     """コード文字列1つから (agent, deck, label) を作る（アップロード/登録 共通の核）。
 
     デッキ解決: ⓪保存済みデッキ(forced_deck。Kaggle回収等)があればそれ →
     ①コード内のデッキリスト注記が60枚そろえばそれ → ②AIに初期デッキを尋ねる。
     解決デッキを deck.csv として配置してからエージェントを読み込む（deck.csv を読むAI対応）。
+    extra_src があれば同梱の別モジュール(*.py)も複製する（複数ファイル提出対応）。
     """
     agent_dir = _custom_agent_dir(gid, side)
     if agent_dir.exists():
         shutil.rmtree(agent_dir, ignore_errors=True)
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "main.py").write_text(code, encoding="utf-8")
+    _copy_sibling_modules(extra_src, agent_dir)
     if forced_deck and len(forced_deck) == 60:
         deck = list(forced_deck)
         deck_source = "登録デッキ"
@@ -283,7 +301,8 @@ def _load_agent_side(gid, side, atype, file_field, id_field, default_deck):
         name = next((a["name"] for a in list_user_agents() if a["id"] == aid), aid)
         forced = read_user_agent_deck(aid)  # 保存済みデッキ(Kaggle回収等)を優先
         return _materialize_agent(gid, side, code, f"登録AI（{name}）",
-                                  default_deck, forced_deck=forced)
+                                  default_deck, forced_deck=forced,
+                                  extra_src=user_agent_dir(aid))
     code, fname = _upload_agent_code(file_field)
     return _materialize_agent(gid, side, code, f"カスタムAI（{fname}）", default_deck)
 
@@ -348,6 +367,7 @@ def _load_registered_agent(aid):
         shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True, exist_ok=True)
     (d / "main.py").write_text(code, encoding="utf-8")
+    _copy_sibling_modules(user_agent_dir(aid), d)  # 同梱の別モジュール(*.py)も複製
     deck = read_user_agent_deck(aid)  # 保存済みデッキ(Kaggle回収等)を優先
     if deck is None:
         deck = parse_decklist_comments(code)
