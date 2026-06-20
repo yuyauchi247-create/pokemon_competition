@@ -528,6 +528,27 @@ def _advance_until_human(g):
     ログは最後に戻ってきた obs から1回だけ集める（重複防止）。"""
     controlled = g.get("controlled", {HUMAN})
     obs = g["obs"]
+    g["ai_steps"] = []          # AIの1手ごとの盤面スナップショット（ライブ再生用）
+    _human_mode = g.get("mode") != "ai"
+    _prev = [0]
+
+    def _snap():
+        try:
+            allev = translate_logs(to_observation_class(g["obs"]), HUMAN)
+        except Exception:
+            allev = []
+        newev = allev[_prev[0]:]
+        _prev[0] = len(allev)
+        try:
+            board = _frame_board(g)
+        except Exception:
+            board = None
+        if board is None:
+            return
+        if _human_mode and isinstance(board.get("opp"), dict):
+            board["opp"]["hand"] = None   # 相手手札は伏せる
+        g["ai_steps"].append({"board": board, "events": newev})
+
     steps = 0
     while steps < 100000:
         cur = obs.get("current")
@@ -558,6 +579,7 @@ def _advance_until_human(g):
             break  # 外部操作（人間 or ステップ）の入力待ち
         obs = battle_select(_ai_pick(g, ob.select, obs))
         g["obs"] = obs
+        _snap()                 # AIの1手ごとに盤面＋差分イベントを記録
         steps += 1
     g["obs"] = obs
     # 最終 obs のログ（＝前回選択以降の全出来事）だけを記録
@@ -610,7 +632,8 @@ def _state_json(g, viewer=HUMAN):
     mode = g.get("mode", "human")
     out = {"gid": g.get("gid"), "result": g["result"], "running": g["running"],
            "mode": mode, "status": g.get("status", "playing"),
-           "ver": g.get("ver", 0), "deckLabel": g.get("deck_label")}
+           "ver": g.get("ver", 0), "deckLabel": g.get("deck_label"),
+           "aiSteps": g.get("ai_steps", [])}
     if mode == "pvp":
         out["youLabel"] = g["labels"].get(viewer, f"プレイヤー{viewer + 1}")
         out["oppLabel"] = g["labels"].get(1 - viewer, f"プレイヤー{2 - viewer}")
