@@ -26,9 +26,9 @@
   <div class="crumb"><a href="/">ホーム</a> › 総当たり戦</div>
   <div class="pageHead">
     <h2 class="pageTitle">総当たり戦（AI vs AI）</h2>
-    <button id="runBtn">総当たりを実行</button>
+    <button id="runBtn" disabled>🚧 作業中（一時停止）</button>
   </div>
-  <p class="pageLead">登録済みのAIエージェント全員で総当たり（各ペアを先攻/後攻で2試合ずつ）を実行し、勝敗を集計します。</p>
+  <p class="pageLead">⚠️ 並列実行の改修中のため、総当たり戦は現在一時停止しています。</p>
   <div id="msg" class="hint"></div>
   <div id="result"></div>
 </div>
@@ -40,9 +40,8 @@ function setMsg(m=''){document.getElementById('msg').textContent=m;}
 async function loadAgents(){
   const d=await get('/api/agents');
   const n=(d.agents||[]).length;
-  setMsg(n<2?`登録AIが${n}体です。総当たりには2体以上必要です（AIエージェント登録から追加してください）。`
-            :`登録AI ${n}体: ${d.agents.map(a=>a.name).join('、')}`);
-  document.getElementById('runBtn').disabled = n<2;
+  setMsg('総当たり戦は改修作業中のため一時停止しています。');
+  document.getElementById('runBtn').disabled = true;  // 作業中: 常に無効
 }
 function renderResult(d){
   const names=d.standings.map(s=>s.name);

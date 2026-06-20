@@ -7,12 +7,16 @@
 
 {% block head %}
 <style>
-  .deckGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+  .deckGrid{display:grid;grid-template-columns:1fr;gap:14px;}
   .deckTile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 4px 16px #0b346b0d;}
   .deckTile h3{margin:0 0 2px;font-size:15px;color:var(--ink);}
   .deckTile .desc{font-size:12px;color:var(--sub);margin-bottom:8px;min-height:16px;}
   .deckTile .cards{display:flex;flex-wrap:wrap;gap:5px;}
   .deckTile .sect{font-size:11px;color:var(--teal);font-weight:800;margin:18px 0 8px;}
+  .deckActions{display:flex;gap:8px;margin-top:10px;}
+  .deckActions button{font-size:12px;padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;cursor:pointer;}
+  .deckActions button:hover{background:#f1f7ff;}
+  .deckActions button.danger{color:#9b2a3a;border-color:#f0c4cb;}
 </style>
 {% endblock %}
 
@@ -26,9 +30,6 @@
 
   <div class="sect">あなたの保存済みデッキ</div>
   <div id="userDecks" class="deckGrid"></div>
-
-  <div class="sect">サンプルデッキ</div>
-  <div id="sampleDecks" class="deckGrid"></div>
 
   <div class="sect">登録AIのデッキ</div>
   <div id="agentDecks" class="deckGrid"></div>
@@ -46,25 +47,66 @@ function deckCardsHtml(cards){
 function renderDecks(boxId, decks, opts){
   const box=document.getElementById(boxId);
   if(!decks||!decks.length){box.innerHTML='<div class="emptyNote">'+(opts.empty||'デッキがありません。')+'</div>';return;}
-  box.innerHTML=decks.map(d=>`
-    <div class="deckTile">
+  box.innerHTML=decks.map((d,i)=>{
+    let actions='';
+    if(opts.actions){actions=`<div class="deckActions">
+        <button onclick="location.href='/builder?edit=${d.id}'">編集</button>
+        <button onclick="dupDeck('${d.id}')">複製</button>
+        <button class="danger" onclick="delDeck('${d.id}', this)">削除</button>
+      </div>`;}
+    else if(opts.copyKind){const has=d.cards&&d.cards.length;actions=`<div class="deckActions">
+        <button ${has?'':'disabled'} onclick="copyDeck('${opts.copyKind}',${i})">自分のデッキに複製</button>
+        ${has?'':'<span class="hint">デッキ読取不可</span>'}
+      </div>`;}
+    return `<div class="deckTile" data-name="${(d.name||'').replace(/"/g,'')}">
       <h3>${d.name}</h3>
       <div class="desc">${d.desc||''}</div>
       <div class="cards">${deckCardsHtml(d.cards)}</div>
-    </div>`).join('');
+      ${actions}
+    </div>`;
+  }).join('');
+}
+async function delDeck(id, btn){
+  const name=btn.closest('.deckTile').dataset.name||'このデッキ';
+  if(!confirm('「'+name+'」を削除しますか？'))return;
+  const res=await fetch('/api/user_decks/'+id,{method:'DELETE'});
+  const r=await res.json();
+  if(r.error){alert(r.error);return;}
+  location.reload();
+}
+async function dupDeck(id){
+  const d=await get('/api/user_decks/'+id);
+  if(d.error){alert(d.error);return;}
+  const cards=expandCards(d.cards);
+  const r=await post('/api/user_decks',{name:(d.name||'デッキ')+' のコピー',cards});
+  if(r.error){alert(r.error);return;}
+  location.reload();
+}
+function expandCards(cards){const out=[];(cards||[]).forEach(c=>{for(let i=0;i<(c.count||0);i++)out.push(c.id);});return out;}
+async function copyDeck(kind, idx){
+  const d=kind==='sample'?(CFG.sampleDecks||[])[idx]:(CFG.agents||[])[idx];
+  if(!d){alert('デッキが見つかりません。');return;}
+  const cards=expandCards(d.cards);
+  if(!cards.length){alert('このデッキはカード情報が読めないため複製できません。');return;}
+  const r=await post('/api/user_decks',{name:(d.name||'デッキ')+' のコピー',cards});
+  if(r.error){alert('複製できません: '+r.error);return;}
+  location.reload();
 }
 function renderAgentDecks(agents){
   const box=document.getElementById('agentDecks');
   if(!agents||!agents.length){box.innerHTML='<div class="emptyNote">登録AIがありません。「AIエージェント登録」から追加できます。</div>';return;}
-  box.innerHTML=agents.map(a=>{
-    const body=(a.cards&&a.cards.length)?`<div class="cards">${deckCardsHtml(a.cards)}</div>`
+  box.innerHTML=agents.map((a,i)=>{
+    const has=a.cards&&a.cards.length;
+    const body=has?`<div class="cards">${deckCardsHtml(a.cards)}</div>`
       :'<div class="hint">デッキはファイルから読み取れません（対戦開始時にAIが決定）。</div>';
-    return `<div class="deckTile"><h3>🤖 ${a.name}</h3><div class="desc">${a.deck_source||''}</div>${body}</div>`;
+    const actions=`<div class="deckActions"><button ${has?'':'disabled'} onclick="copyDeck('agent',${i})">自分のデッキに複製</button>${has?'':'<span class="hint">複製不可</span>'}</div>`;
+    return `<div class="deckTile"><h3>🤖 ${a.name}</h3><div class="desc">${a.deck_source||''}</div>${body}${actions}</div>`;
   }).join('');
 }
+let CFG=null;
 get('/api/config').then(c=>{
-  renderDecks('userDecks', c.userDecks||[], {empty:'保存済みデッキはまだありません。「＋ 新しいデッキを作成」から作れます。'});
-  renderDecks('sampleDecks', c.sampleDecks||[], {empty:'サンプルデッキがありません。'});
+  CFG=c;
+  renderDecks('userDecks', c.userDecks||[], {actions:true, empty:'保存済みデッキはまだありません。「＋ 新しいデッキを作成」から作れます。'});
   renderAgentDecks(c.agents||[]);
 });
 </script>

@@ -14,6 +14,7 @@ import json
 import os
 import random
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -33,7 +34,8 @@ from selection import (  # noqa: E402
     preview_agent_upload, read_sample_deck, read_user_agent_code,
     read_user_agent_deck, read_user_deck, user_agent_dir,
     sample_deck_options, save_user_agent, save_user_deck,
-    update_user_agent_deck, validate_ai_picks, validate_deck_for_builder,
+    update_user_agent_deck, update_user_deck, delete_user_deck,
+    validate_ai_picks, validate_deck_for_builder,
 )
 from sim_env import (  # noqa: E402
     to_observation_class, battle_start, battle_select, battle_finish,
@@ -51,6 +53,11 @@ ALLOW_AGENT_UPLOAD = os.environ.get("POKECA_ALLOW_AGENT_UPLOAD", "1") != "0"
 
 # 対戦ログの保存先（対戦ごとに1ファイル）。
 LOGS_DIR = Path(__file__).resolve().parents[2] / "data" / "logs"
+
+# 個別AI評価（challenger）のジョブ置き場と実行スクリプト。
+APP_ROOT = Path(__file__).resolve().parents[2]
+EVAL_JOBS_DIR = Path(tempfile.gettempdir()) / "pokeca_eval_jobs"
+EVAL_GAMES_PER_PAIR = 10  # 個別評価: 各相手と先攻/後攻×この試合数
 
 # ---- 複数同時対戦の管理 ----
 # GAMES: gid -> ゲーム状態。mode は "human"（人 vs AI）/ "ai"（AI vs AI 観戦）。
@@ -521,6 +528,27 @@ def _advance_until_human(g):
     ログは最後に戻ってきた obs から1回だけ集める（重複防止）。"""
     controlled = g.get("controlled", {HUMAN})
     obs = g["obs"]
+    g["ai_steps"] = []          # AIの1手ごとの盤面スナップショット（ライブ再生用）
+    _human_mode = g.get("mode") != "ai"
+    _prev = [0]
+
+    def _snap():
+        try:
+            allev = translate_logs(to_observation_class(g["obs"]), HUMAN)
+        except Exception:
+            allev = []
+        newev = allev[_prev[0]:]
+        _prev[0] = len(allev)
+        try:
+            board = _frame_board(g)
+        except Exception:
+            board = None
+        if board is None:
+            return
+        if _human_mode and isinstance(board.get("opp"), dict):
+            board["opp"]["hand"] = None   # 相手手札は伏せる
+        g["ai_steps"].append({"board": board, "events": newev})
+
     steps = 0
     while steps < 100000:
         cur = obs.get("current")
@@ -551,6 +579,7 @@ def _advance_until_human(g):
             break  # 外部操作（人間 or ステップ）の入力待ち
         obs = battle_select(_ai_pick(g, ob.select, obs))
         g["obs"] = obs
+        _snap()                 # AIの1手ごとに盤面＋差分イベントを記録
         steps += 1
     g["obs"] = obs
     # 最終 obs のログ（＝前回選択以降の全出来事）だけを記録
@@ -603,7 +632,8 @@ def _state_json(g, viewer=HUMAN):
     mode = g.get("mode", "human")
     out = {"gid": g.get("gid"), "result": g["result"], "running": g["running"],
            "mode": mode, "status": g.get("status", "playing"),
-           "ver": g.get("ver", 0), "deckLabel": g.get("deck_label")}
+           "ver": g.get("ver", 0), "deckLabel": g.get("deck_label"),
+           "aiSteps": g.get("ai_steps", [])}
     if mode == "pvp":
         out["youLabel"] = g["labels"].get(viewer, f"プレイヤー{viewer + 1}")
         out["oppLabel"] = g["labels"].get(1 - viewer, f"プレイヤー{2 - viewer}")
@@ -732,6 +762,88 @@ def replay():
 @app.route("/tournament")
 def tournament():
     return render_template("tournament.html")
+
+
+@app.route("/evaluate")
+def evaluate_page():
+    return render_template("evaluate.html")
+
+
+def _pid_alive(pid):
+    """プロセスが生存しているか（POSIX）。"""
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+@app.route("/api/evaluate", methods=["POST"])
+def api_evaluate_start():
+    """個別AI評価を開始: run_tournament.py --challenger を別プロセスで起動し job_id を返す。
+
+    Webワーカー(1本)を塞がないよう、重い対戦は子プロセスに逃がしてポーリングさせる。
+    """
+    data = request.get_json(silent=True) or {}
+    aid = data.get("agent_id")
+    metas = list_user_agents()
+    if len(metas) < 2:
+        return _selection_error("評価には登録AIが2体以上必要です。")
+    m = next((x for x in metas if x["id"] == aid), None)
+    if m is None:
+        return _selection_error("指定のAIが見つかりません。")
+    EVAL_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    job_id = uuid.uuid4().hex[:12]
+    jobfile = EVAL_JOBS_DIR / f"{job_id}.json"
+    workers = max(1, os.cpu_count() or 2)
+    cmd = [sys.executable, "tools/run_tournament.py",
+           "--challenger", aid,
+           "--games-per-pair", str(EVAL_GAMES_PER_PAIR),
+           "--workers", str(workers),
+           "--progress-file", str(EVAL_JOBS_DIR / f"{job_id}.progress"),
+           "--out", str(jobfile)]
+    proc = subprocess.Popen(
+        cmd, cwd=str(APP_ROOT),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    (EVAL_JOBS_DIR / f"{job_id}.meta").write_text(json.dumps({
+        "agent_id": aid, "name": m["name"], "pid": proc.pid,
+        "opponents": len(metas) - 1,
+        "games_per_pair": EVAL_GAMES_PER_PAIR,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }), encoding="utf-8")
+    return jsonify({"job_id": job_id, "name": m["name"],
+                    "opponents": len(metas) - 1})
+
+
+@app.route("/api/evaluate/<job_id>", methods=["GET"])
+def api_evaluate_status(job_id):
+    """個別AI評価の進捗/結果を返す（done / running / failed）。"""
+    if not job_id.isalnum():
+        abort(404)
+    metafile = EVAL_JOBS_DIR / f"{job_id}.meta"
+    jobfile = EVAL_JOBS_DIR / f"{job_id}.json"
+    if not metafile.exists():
+        abort(404)
+    meta = json.loads(metafile.read_text(encoding="utf-8"))
+    if jobfile.exists():
+        try:
+            result = json.loads(jobfile.read_text(encoding="utf-8"))
+            return jsonify({"status": "done", "meta": meta, "result": result})
+        except Exception:
+            pass  # 書き込み中 → running 扱い
+    prog = None
+    progfile = EVAL_JOBS_DIR / f"{job_id}.progress"
+    if progfile.exists():
+        try:
+            prog = json.loads(progfile.read_text(encoding="utf-8"))
+        except Exception:
+            prog = None
+    if not jobfile.exists() and not _pid_alive(meta.get("pid")):
+        return jsonify({"status": "failed", "meta": meta, "progress": prog})
+    return jsonify({"status": "running", "meta": meta, "progress": prog})
 
 
 @app.route("/api/tournament", methods=["POST"])
@@ -871,14 +983,9 @@ def api_delete_agent(agent_id):
 
 @app.route("/api/config", methods=["GET"])
 def api_config():
-    """サンプル・保存済みデッキ一覧（中身プレビュー込み）を返す。"""
+    """保存済みデッキ・登録AIデッキ一覧（中身プレビュー込み）を返す。"""
+    # サンプルデッキはUIから非表示（内部フォールバックでのみ使用するため返さない）。
     sample_decks = []
-    for opt in sample_deck_options():
-        try:
-            cards = deck_card_counts(read_sample_deck(opt["id"]))
-        except SelectionError:
-            cards = []
-        sample_decks.append({**opt, "cards": _deck_preview(cards)})
 
     user_decks = []
     for opt in list_user_decks():
@@ -895,6 +1002,22 @@ def _deck_preview(counts):
     return [{**card_meta(c["cardId"]), "count": c["count"]} for c in counts]
 
 
+def _max_attack_damage(detail):
+    """ワザの「ダメージ」表記(例 '130', '90+', '120×')の先頭数値の最大値。技無しは0。"""
+    best = 0
+    for m in detail.get("moves", []):
+        s = str(m.get("damage") or "").strip()
+        num = ""
+        for ch in s:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        if num:
+            best = max(best, int(num))
+    return best
+
+
 @app.route("/api/cards", methods=["GET"])
 def api_cards():
     """デッキ作成画面用: PDF 39ページまでの使用可能カード(ID 1..1267)。"""
@@ -909,6 +1032,7 @@ def api_cards():
             "category": detail.get("category", ""),
             "rule": detail.get("rule", ""),
             "evolvesFrom": detail.get("evolvesFrom", ""),
+            "maxDamage": _max_attack_damage(detail),  # 攻撃力ソート用
         })
     return jsonify({"cards": cards})
 
@@ -932,6 +1056,30 @@ def api_user_deck(deck_id):
         deck = read_user_deck(deck_id)
         opt = next((d for d in list_user_decks() if d["id"] == deck_id), {"id": deck_id, "name": deck_id})
         return jsonify({"id": deck_id, "name": opt["name"], "cards": _deck_preview(deck_card_counts(deck))})
+    except SelectionError as exc:
+        return _selection_error(str(exc), status=404)
+
+
+@app.route("/api/user_decks/<deck_id>", methods=["PUT"])
+def api_update_user_deck(deck_id):
+    """既存デッキを上書き更新（編集保存）。"""
+    payload = request.json or {}
+    try:
+        name = str(payload.get("name", "保存デッキ"))
+        deck = [int(v) for v in payload.get("cards", [])]
+        saved = update_user_deck(deck_id, name, deck)
+        counts = deck_card_counts(read_user_deck(saved["id"]))
+        return jsonify({**saved, "cards": _deck_preview(counts)})
+    except (SelectionError, ValueError, TypeError) as exc:
+        return _selection_error(str(exc))
+
+
+@app.route("/api/user_decks/<deck_id>", methods=["DELETE"])
+def api_delete_user_deck(deck_id):
+    """保存デッキを削除。"""
+    try:
+        delete_user_deck(deck_id)
+        return jsonify({"ok": True, "id": deck_id})
     except SelectionError as exc:
         return _selection_error(str(exc), status=404)
 

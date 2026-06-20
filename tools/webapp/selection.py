@@ -184,6 +184,26 @@ def save_user_deck(name: str, deck: list[int], decks_dir: Path | None = None) ->
     return {"id": deck_id, "name": name, "path": str(csv_path)}
 
 
+def update_user_deck(deck_id: str, name: str, deck: list[int],
+                     decks_dir: Path | None = None) -> dict[str, str]:
+    """既存の保存デッキ(deck_id)を上書き更新する。idは保持。"""
+    path = _safe_user_deck_path(deck_id, decks_dir)   # 存在チェック込み
+    name = (name or "保存デッキ").strip()[:80]
+    validate_deck_for_builder(deck)
+    path.write_text("\n".join(str(cid) for cid in deck) + "\n", encoding="utf-8")
+    path.with_suffix(".json").write_text(
+        json.dumps({"id": deck_id, "name": name}, ensure_ascii=False, indent=2),
+        encoding="utf-8")
+    return {"id": deck_id, "name": name, "path": str(path)}
+
+
+def delete_user_deck(deck_id: str, decks_dir: Path | None = None) -> None:
+    """保存デッキ(csv+meta)を削除する。"""
+    path = _safe_user_deck_path(deck_id, decks_dir)   # 存在チェック込み
+    path.unlink(missing_ok=True)
+    path.with_suffix(".json").unlink(missing_ok=True)
+
+
 def _safe_user_deck_path(deck_id: str, decks_dir: Path | None = None) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9_-]+", deck_id or ""):
         raise SelectionError(f"不明な保存デッキです: {deck_id}")

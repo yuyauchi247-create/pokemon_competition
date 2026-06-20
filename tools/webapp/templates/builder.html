@@ -18,12 +18,24 @@
     <div class="builderTools">
       <input id="deckNameInput" type="text" placeholder="デッキ名（例: わたしの炎デッキ）">
       <input id="cardSearch" type="search" placeholder="カード名・IDで検索">
-      <select id="cardTypeFilter"><option value="">すべて</option><option>POKEMON</option><option>ITEM</option><option>SUPPORTER</option><option>STADIUM</option><option>TOOL</option><option>BASIC_ENERGY</option><option>SPECIAL_ENERGY</option></select>
-      <select id="energyFilter"><option value="">全タイプ</option><option>GRASS</option><option>FIRE</option><option>WATER</option><option>LIGHTNING</option><option>PSYCHIC</option><option>FIGHTING</option><option>DARKNESS</option><option>METAL</option><option>COLORLESS</option></select>
+      <select id="cardTypeFilter"><option value="">すべて</option><option value="POKEMON">ポケモン</option><option value="ITEM">グッズ</option><option value="SUPPORTER">サポート</option><option value="STADIUM">スタジアム</option><option value="TOOL">ポケモンのどうぐ</option><option value="BASIC_ENERGY">基本エネルギー</option><option value="SPECIAL_ENERGY">特殊エネルギー</option></select>
+      <select id="energyFilter"><option value="">全タイプ</option><option value="GRASS">草</option><option value="FIRE">炎</option><option value="WATER">水</option><option value="LIGHTNING">雷</option><option value="PSYCHIC">超</option><option value="FIGHTING">闘</option><option value="DARKNESS">悪</option><option value="METAL">鋼</option><option value="COLORLESS">無色</option></select>
+      <select id="flagFilter"><option value="">レアリティ問わず</option><option value="ex">ポケモンex</option><option value="MEGA">メガex</option><option value="tera">テラスタル</option><option value="ACE">ACE SPEC</option></select>
+      <select id="sortBy"><option value="">並び: ID順</option><option value="hp">HP高い順</option><option value="dmg">攻撃力高い順</option><option value="type">タイプ順</option></select>
+    </div>
+    <div class="handTest">
+      <div class="handBtns">
+        <span class="handLabel">🃏 手札テスト</span>
+        <button type="button" id="draw5Btn">初手を引く（5枚）</button>
+        <button type="button" id="draw1Btn" class="gray">＋1ドロー</button>
+        <button type="button" id="handClearBtn" class="gray">クリア</button>
+        <span id="handInfo" class="hint"></span>
+      </div>
+      <div id="testHand" class="testHand"></div>
     </div>
     <div class="builderGrid">
-      <div class="library"><h3>カード一覧</h3><div id="cardLibrary" class="cardLibrary"></div></div>
       <div class="deckBox"><h3>作成中デッキ <span id="deckCount">0/60</span></h3><div id="builderMsg"></div><div id="builderDeck" class="builderDeck"></div><button type="button" id="saveDeckBtn">このデッキを保存</button></div>
+      <div class="library"><h3>カード一覧</h3><div id="cardLibrary" class="cardLibrary"></div></div>
     </div>
   </div>
 </div>
@@ -31,7 +43,7 @@
 
 {% block script %}
 <script>
-let ALL_CARDS=[], CURRENT_DECK=[];
+let ALL_CARDS=[], CURRENT_DECK=[], EDIT_ID=null;
 const BASIC_ENERGY=new Set([1,2,3,4,5,6,7,8]);
 const ACE_SPEC_IDS=new Set([10,12,13,1080,1082,1085,1088,1089,1092,1093,1095,1096,1100,1104,1107,1109,1110,1111,1125,1126,1128,1155,1158,1159,1165,1167,1169,1247,1249]);
 
@@ -48,18 +60,24 @@ function renderCardLibrary(){
   const q=(document.getElementById('cardSearch').value||'').toLowerCase().trim();
   const ct=document.getElementById('cardTypeFilter').value;
   const et=document.getElementById('energyFilter').value;
+  const fl=document.getElementById('flagFilter').value;
+  const sort=document.getElementById('sortBy').value;
   const counts=deckCounts();
-  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et));
+  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et)&&(!fl||(c.flags||[]).includes(fl)));
+  if(sort==='hp')        cards=cards.slice().sort((a,b)=>(b.hp||0)-(a.hp||0)||a.id-b.id);
+  else if(sort==='dmg')  cards=cards.slice().sort((a,b)=>(b.maxDamage||0)-(a.maxDamage||0)||a.id-b.id);
+  else if(sort==='type') cards=cards.slice().sort((a,b)=>String(a.type||'').localeCompare(String(b.type||''))||a.id-b.id);
   document.getElementById('cardLibrary').innerHTML=cards.map(c=>{
     const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name}</div>`;
     const cnt=counts[c.id]||0;
     const maxed=(!BASIC_ENERGY.has(c.id)&&cnt>=4)||(ACE_SPEC_IDS.has(c.id)&&(cnt>=1||deckHasAceSpec()));
     const have=cnt?`<div class="have${maxed?' maxed':''}">×${cnt}</div>`:'';
-    return `<div class="libCard${maxed?' disabled':''}" data-id="${c.id}" title="${c.name} ID:${c.id}">${inner}<div class="cid">ID:${c.id}</div>${have}<div class="nm">${c.name}</div></div>`;
+    const stat=c.hp?`<div class="cid">HP${c.hp}${c.maxDamage?` ⚔${c.maxDamage}`:''}</div>`:'';
+    return `<div class="libCard${maxed?' disabled':''}" data-id="${c.id}" title="${c.name} ID:${c.id}">${inner}<div class="cid">ID:${c.id}</div>${stat}${have}<div class="nm">${c.name}</div></div>`;
   }).join('')||'<div class="hint">該当カードがありません</div>';
   document.querySelectorAll('#cardLibrary .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id));
 }
-async function openBuilderCard(cid){
+async function openBuilderCard(cid, readonly){
   const c=await get('/api/card/'+cid);
   const t=c.type||'COLORLESS';
   const counts=deckCounts();
@@ -84,6 +102,14 @@ async function openBuilderCard(cid){
   const maxed=(!BASIC_ENERGY.has(cid)&&cnt>=4)||(ACE_SPEC_IDS.has(cid)&&(cnt>=1||deckHasAceSpec()));
   const addDisabled=maxed||CURRENT_DECK.length>=60;
   const addLabel=maxed?(ACE_SPEC_IDS.has(cid)?'ACE SPEC上限です':'4枚上限です'):CURRENT_DECK.length>=60?'60枚上限です':`デッキに追加（現在 ×${cnt}）`;
+  const limitMsg=addDisabled?(maxed?(ACE_SPEC_IDS.has(cid)?'（ACE SPECは1枚まで）':'（同名4枚まで）'):'（60枚に到達）'):'';
+  const editBtns=readonly?'':
+    `<div class="qtyStep">
+       <button class="gray qtyBtn" id="modalDecBtn" ${cnt<=0?'disabled':''}>‹</button>
+       <span class="qtyNum">デッキ内 ×${cnt}</span>
+       <button class="qtyBtn" id="modalIncBtn" ${addDisabled?'disabled':''}>›</button>
+       <span class="hint">${limitMsg}</span>
+     </div>`;
   document.getElementById('modal').innerHTML=`
     <span class="mtype ${chipCls}">${chip}</span>
     <h3>${c.name} ${c.flags?.length?`<small style="color:#b8860b">${c.flags.join(' ')}</small>`:''}</h3>
@@ -92,11 +118,13 @@ async function openBuilderCard(cid){
     <div class="mrow">デッキ内: ×${cnt}　ID:${cid}</div>
     ${body}
     <div class="acts">
-      <button ${addDisabled?'disabled':''} id="modalAddBtn">${addLabel}</button>
+      ${editBtns}
       <button class="gray" onclick="closeModal()">閉じる</button>
     </div>`;
-  const btn=document.getElementById('modalAddBtn');
-  if(btn&&!addDisabled) btn.onclick=()=>{addCard(cid);openBuilderCard(cid);};
+  const inc=document.getElementById('modalIncBtn');
+  if(inc&&!addDisabled) inc.onclick=()=>{addCard(cid);openBuilderCard(cid, readonly);};
+  const dec=document.getElementById('modalDecBtn');
+  if(dec&&cnt>0) dec.onclick=()=>{removeCard(cid);openBuilderCard(cid, readonly);};
   showModal();
 }
 function addCard(id){
@@ -119,27 +147,81 @@ function renderBuilderDeck(){
   const warn=deckWarnings();
   document.getElementById('builderMsg').textContent=warn;
   document.getElementById('builderDeck').innerHTML=ids.map(id=>{
-    const c=cardById(id); const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:'<div class="ph"></div>';
-    return `<div class="deckLine"><div>${inner}</div><div><div class="nm">${c.name}</div><div class="sub">ID:${id} / ${c.cardType||''} ${c.typeJP||c.type||''}</div></div><b>×${counts[id]}</b><button type="button" class="minus" data-id="${id}">-</button></div>`;
-  }).join('')||'<div class="hint">左のカード一覧からクリックして追加してください。</div>';
-  document.querySelectorAll('#builderDeck button.minus').forEach(b=>b.onclick=()=>removeCard(+b.dataset.id));
+    const c=cardById(id);
+    const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name}</div>`;
+    return `<div class="libCard" data-id="${id}" title="${c.name} ×${counts[id]}（クリックで1枚減らす）">${inner}<div class="cid">ID:${id}</div><div class="have">×${counts[id]}</div><div class="nm">${c.name}</div></div>`;
+  }).join('')||'<div class="hint">右のカード一覧からクリックして追加してください。</div>';
+  document.querySelectorAll('#builderDeck .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id));
 }
 function builderMessage(msg){document.getElementById('builderMsg').textContent=msg||'';}
 async function saveBuilderDeck(){
   const name=document.getElementById('deckNameInput').value.trim()||'保存デッキ';
-  builderMessage('保存中…');
-  const r=await post('/api/user_decks',{name,cards:CURRENT_DECK});
+  builderMessage(EDIT_ID?'更新中…':'保存中…');
+  let r;
+  if(EDIT_ID){
+    const res=await fetch('/api/user_decks/'+EDIT_ID,{method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,cards:CURRENT_DECK})});
+    r=await res.json();
+  }else{
+    r=await post('/api/user_decks',{name,cards:CURRENT_DECK});
+  }
   if(r.error){builderMessage(r.error);return;}
-  // 保存したら選択画面に戻り、そのデッキを選択状態にする
-  location.href='/decks';
+  location.href='/decks';   // 保存/更新したら一覧へ
 }
 
-['cardSearch','cardTypeFilter','energyFilter'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
+// ?edit=<id> があれば既存デッキを読み込んで編集モードにする
+async function maybeLoadEdit(){
+  const id=new URLSearchParams(location.search).get('edit');
+  if(!id)return;
+  const d=await get('/api/user_decks/'+id);
+  if(d.error){builderMessage(d.error);return;}
+  EDIT_ID=id;
+  CURRENT_DECK=[];
+  (d.cards||[]).forEach(c=>{for(let i=0;i<(c.count||0);i++)CURRENT_DECK.push(c.id);});
+  document.getElementById('deckNameInput').value=d.name||'';
+  const h=document.querySelector('#builder h2'); if(h)h.textContent='デッキ編集';
+  document.getElementById('saveDeckBtn').textContent='このデッキを更新';
+  renderBuilderDeck();renderCardLibrary();
+}
+
+['cardSearch','cardTypeFilter','energyFilter','flagFilter','sortBy'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
 document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/decks';};
 document.getElementById('saveDeckBtn').onclick=saveBuilderDeck;
 
+// ===== 手札テスト（初手5枚／+1ドロー） =====
+let HAND=[], DRAWPILE=[];
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function renderHand(){
+  const box=document.getElementById('testHand'), info=document.getElementById('handInfo');
+  if(!HAND.length){box.innerHTML='';info.textContent='';return;}
+  const basics=HAND.filter(id=>{const c=cardById(id);return c.stage&&c.stage.includes('たね');}).length;
+  info.textContent=`手札${HAND.length}枚 / 山札残り${DRAWPILE.length}枚 / たねポケ${basics}枚`+(basics?'':'（⚠たね無し＝マリガン）');
+  box.innerHTML=HAND.map(id=>{
+    const c=cardById(id);
+    const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name}</div>`;
+    return `<div class="libCard" data-id="${id}" title="${c.name}">${inner}<div class="nm">${c.name}</div></div>`;
+  }).join('');
+  document.querySelectorAll('#testHand .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id, true));
+}
+function drawOpening(){
+  if(!CURRENT_DECK.length){document.getElementById('handInfo').textContent='デッキにカードがありません。';return;}
+  DRAWPILE=shuffle(CURRENT_DECK.slice());
+  HAND=DRAWPILE.splice(0,Math.min(5,DRAWPILE.length));
+  renderHand();
+}
+function drawOne(){
+  if(!HAND.length){drawOpening();return;}
+  if(!DRAWPILE.length){document.getElementById('handInfo').textContent='山札がもうありません。';return;}
+  HAND.push(DRAWPILE.shift());
+  renderHand();
+}
+document.getElementById('draw5Btn').onclick=drawOpening;
+document.getElementById('draw1Btn').onclick=drawOne;
+document.getElementById('handClearBtn').onclick=()=>{HAND=[];DRAWPILE=[];renderHand();};
+
 document.getElementById('cardLibrary').innerHTML='<div class="hint">カード一覧を読み込み中…</div>';
-get('/api/cards').then(d=>{ALL_CARDS=d.cards||[];renderCardLibrary();});
+get('/api/cards').then(d=>{ALL_CARDS=d.cards||[];renderCardLibrary();maybeLoadEdit();});
 renderBuilderDeck();
 </script>
 {% endblock %}

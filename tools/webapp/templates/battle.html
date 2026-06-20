@@ -7,6 +7,12 @@
 
 {% block head %}
 <style>
+  @keyframes cardGlow{0%,100%{box-shadow:0 0 0 0 rgba(43,140,255,0);}50%{box-shadow:0 0 0 5px rgba(43,140,255,.6);}}
+  .pcard.glow{animation:cardGlow 1.2s ease-in-out infinite;outline:2px solid #2b8cff;outline-offset:1px;border-radius:10px;cursor:pointer;z-index:3;}
+  .pcard.selpick{outline:3px solid #1565d8;outline-offset:1px;border-radius:10px;box-shadow:0 0 0 4px rgba(21,101,216,.25);animation:none;}
+  .glowhint{color:#1769d6;font-weight:800;}
+  .handprompt{margin-bottom:8px;padding:9px 14px;border-radius:10px;background:#eaf3ff;border:1px solid #b9d4f5;color:#1769d6;font-weight:800;font-size:15px;}
+  .hidden{display:none;}
   .battle{display:grid;grid-template-columns:1fr 300px;gap:14px;max-width:1240px;margin:14px auto;padding:0 14px;align-items:start;}
   @media(max-width:980px){.battle{grid-template-columns:1fr;}}
   .stage{min-width:0;}
@@ -83,14 +89,15 @@
       <div class="zone-bench you" id="youBench"></div>
       <div class="zone-side" id="youPiles"></div>
     </section>
+    <div id="ask"></div>
+    <div id="aiControls" class="aiControls hidden"></div>
     <div class="handzone">
+      <div class="handprompt hidden" id="handPrompt"></div>
       <div class="handlabel" id="youHandLabel">あなたの手札</div>
       <div class="row" id="youHand"></div>
       <div class="handlabel oppHandLabel hidden" id="oppHandLabel">相手の手札</div>
       <div class="row hidden" id="oppHand"></div>
     </div>
-    <div id="ask"></div>
-    <div id="aiControls" class="aiControls hidden"></div>
   </div>
   <div id="log"><h2>対戦ログ</h2><div id="logbody"></div></div>
 </main>
@@ -233,9 +240,10 @@ function attackOptionMap(){
 }
 
 /* ---------- カードタイル ---------- */
-function tile(c,{active=false,hp=null,maxHp=null,energy=null,energyTypes=null,area=null,pos=null,hand=null,drag=false}={}){
+function tile(c,{active=false,hp=null,maxHp=null,energy=null,energyTypes=null,area=null,pos=null,hand=null,drag=false,glow=false,sel=false}={}){
   if(!c)return `<div class="empty-c">なし</div>`;
   const t=c.type||'COLORLESS';
+  const gc=(glow?' glow':'')+(sel?' selpick':'');
   const attrs=[`data-cid="${c.id}"`];
   if(area!=null)attrs.push(`data-area="${area}"`,`data-pos="${pos}"`);
   if(hand!=null)attrs.push(`data-hand="${hand}"`);
@@ -247,7 +255,7 @@ function tile(c,{active=false,hp=null,maxHp=null,energy=null,energyTypes=null,ar
         <div class="hpbar"><i style="width:${p}%"></i></div></div>`;
   }
   if(c.img){
-    return `<div class="pcard imgcard ${active?'active':''}" ${attrs.join(' ')}>
+    return `<div class="pcard imgcard ${active?'active':''}${gc}" ${attrs.join(' ')}>
        <img class="full" src="${c.img}" loading="lazy" alt="${c.name}" draggable="false">${ov}</div>`;
   }
   let hpln='';
@@ -255,13 +263,13 @@ function tile(c,{active=false,hp=null,maxHp=null,energy=null,energyTypes=null,ar
     hpln=`<div class="ln"><span>HP</span><span>${hp}/${maxHp}</span></div><div class="hpbar"><i style="width:${p}%"></i></div>`;}
   else if(c.hp){hpln=`<div class="ln"><span>HP</span><span>${c.hp}</span></div>`;}
   const ene=energy!=null?`<div class="ene">${eneIcons(energyTypes,energy)||'　'}</div>`:'';
-  return `<div class="pcard ${active?'active':''}" ${attrs.join(' ')}>
+  return `<div class="pcard ${active?'active':''}${gc}" ${attrs.join(' ')}>
      <div class="bar c-${t}"></div>
      <div class="bd"><div class="nm">${c.name}</div><div class="art a-${t}">${ICON[t]||'⭐'}</div>${hpln}${ene}</div></div>`;
 }
-function benchHtml(bench,interactive){
+function benchHtml(bench,interactive,glowSet,pickSet){
   const slots=(bench||[]).map((b,i)=> b
-    ? tile(b,{hp:b.hp,maxHp:b.maxHp,energy:b.energy,energyTypes:b.energyTypes,area:interactive?BENCH:null,pos:interactive?i:null})
+    ? tile(b,{hp:b.hp,maxHp:b.maxHp,energy:b.energy,energyTypes:b.energyTypes,area:interactive?BENCH:null,pos:interactive?i:null,glow:!!(glowSet&&glowSet.has(BENCH+':'+i)),sel:!!(pickSet&&pickSet.has(BENCH+':'+i))})
     : '<div class="empty-c">－</div>');
   if(!slots.length) slots.push('<div class="empty-c">ベンチなし</div>');
   return slots.join('');
@@ -282,10 +290,16 @@ function renderBoard(){
   document.getElementById('turnInfo').textContent=b?`ターン ${b.turn}｜${STATE.youLabel||'あなた'} vs ${STATE.oppLabel||'相手'}`:'';
   if(!b)return;
   const oa=b.opp.active, ya=b.you.active;
+  // 単一選択(1枚選ぶ)のときだけ、対象の自分の手札/場カードを光らせる
+  const sel=STATE.select;
+  const cm=classify();
+  const boardGlow=new Set(Object.keys(cm.board));
+  const gOn=!!sel;   // 選択中はいつでも対象カードを光らせる
+  const bPick=new Set(Object.keys(cm.board).filter(k=>(cm.board[k]||[]).some(o=>picks.includes(o.index))));
   document.getElementById('oppActive').innerHTML=tile(oa,{active:true,hp:oa?.hp,maxHp:oa?.maxHp,energy:oa?.energy,energyTypes:oa?.energyTypes});
-  document.getElementById('youActive').innerHTML=tile(ya,{active:true,hp:ya?.hp,maxHp:ya?.maxHp,energy:ya?.energy,energyTypes:ya?.energyTypes,area:ACTIVE,pos:0});
+  document.getElementById('youActive').innerHTML=tile(ya,{active:true,hp:ya?.hp,maxHp:ya?.maxHp,energy:ya?.energy,energyTypes:ya?.energyTypes,area:ACTIVE,pos:0,glow:gOn&&boardGlow.has(ACTIVE+':0'),sel:bPick.has(ACTIVE+':0')});
   document.getElementById('oppBench').innerHTML=benchHtml(b.opp.bench,false);
-  document.getElementById('youBench').innerHTML=benchHtml(b.you.bench,true);
+  document.getElementById('youBench').innerHTML=benchHtml(b.you.bench,true,gOn?boardGlow:null,bPick);
   document.getElementById('oppSide').innerHTML=sideHtml(b.opp);
   document.getElementById('youSide').innerHTML=sideHtml(b.you);
   document.getElementById('oppPiles').innerHTML=pilesHtml(b.opp,'opp');
@@ -294,7 +308,7 @@ function renderBoard(){
   const m=classify();
   const actionable=new Set(Object.keys(m.hand).map(Number));
   document.getElementById('youHand').innerHTML=(b.you.hand||[]).map((c,i)=>
-     tile(c,{hand:i,drag:actionable.has(i)})).join('')||'<span class="hint">なし</span>';
+     tile(c,{hand:i,drag:actionable.has(i),glow:gOn&&actionable.has(i),sel:(m.hand[i]||[]).some(o=>picks.includes(o.index))})).join('')||'<span class="hint">なし</span>';
   // AI vs AI のときは相手の手札も公開
   const oppHandRow=document.getElementById('oppHand'), oppHandLabel=document.getElementById('oppHandLabel');
   if(STATE.mode==='ai'&&b.opp.hand){
@@ -310,47 +324,48 @@ function renderBoard(){
 }
 function renderAsk(){
   const ask=document.getElementById('ask');
-  if(STATE.result!==-1){ask.innerHTML='';return;}
+  const hp=document.getElementById('handPrompt');
+  const hideP=()=>{if(hp){hp.classList.add('hidden');hp.textContent='';}};
+  ask.style.display='';
+  if(STATE.result!==-1){ask.innerHTML='';hideP();return;}
   const s=STATE.select;
-  if(!s){ask.innerHTML=STATE.running?'<div class="hint">AIが考えています…</div>':'';return;}
+  if(!s){ask.innerHTML=STATE.running?'<div class="hint">AIが考えています…</div>':'';hideP();return;}
   const single=(s.minCount===1&&s.maxCount===1);
   const m=classify();
+  const btnOpts=m.panel;            // カード以外の選択肢だけ（ボタン表示。カードのタイルは出さない）
+  picks=[];
+  if(single && btnOpts.length===0){ // 手札/場のカードだけ選ぶ → 箱は出さず、手札上にメッセージ＋光るカード
+    ask.innerHTML=''; ask.style.display='none';
+    if(hp){hp.textContent='👉 '+(CTX[s.context]||'カードを選んでください');hp.classList.remove('hidden');}
+    return;
+  }
+  hideP();
   let h=`<h2>あなたの番です</h2><div class="hint">${CTX[s.context]||'選んでください'}</div>`;
-  const panelOpts = single ? m.panel : s.options;
-  h+=`<div class="opts" id="opts"></div>`;
+  if(btnOpts.length)h+=`<div class="opts" id="opts"></div>`;
   if(!single)h+=`<div style="margin-top:10px"><button id="confirm">決定 (0/${s.maxCount})</button></div>`;
-  h+=`<details><summary>すべての選択肢を表示</summary><div class="opts" id="allopts" style="margin-top:8px"></div></details>`;
   ask.innerHTML=h;
-
-  const opts=document.getElementById('opts'); picks=[];
-  panelOpts.forEach(o=>{
-    const el=document.createElement('div'); el.className='opt'; el.dataset.i=o.index;
-    if(o.card&&o.card.img){
-      el.classList.add('optcard');
-      el.innerHTML=`<img src="${o.card.img}" loading="lazy" alt="${o.card.name||''}" draggable="false"><span>${o.card.name||optLabel(o,s.context)}</span>`;
-    }else{
-      el.textContent=optLabel(o,s.context);
-    }
-    el.onclick=()=>{
-      if(single){submit([o.index]);return;}
-      const i=o.index;
-      if(picks.includes(i)){picks=picks.filter(x=>x!==i);el.classList.remove('sel');}
-      else{if(picks.length>=s.maxCount)return;picks.push(i);el.classList.add('sel');}
-      const cb=document.getElementById('confirm');if(cb)cb.textContent=`決定 (${picks.length}/${s.maxCount})`;
-    };
+  const opts=document.getElementById('opts');
+  if(opts)btnOpts.forEach(o=>{
+    const el=document.createElement('div'); el.className='opt';
+    el.textContent=optLabel(o,s.context);
+    el.onclick=()=>{ if(single)submit([o.index]); else chooseCard(o.index); };
     opts.appendChild(el);
   });
-  if(single&&panelOpts.length===0&&Object.keys(m.hand).length===0&&Object.keys(m.board).length===0){
-    opts.innerHTML='<div class="hint">（操作可能なカードがありません）</div>';
-  }
   const cb=document.getElementById('confirm');
   if(cb)cb.onclick=()=>{if(picks.length<s.minCount){alert(`${s.minCount}個以上選んでください`);return;}submit(picks);};
-  const all=document.getElementById('allopts');
-  s.options.forEach(o=>{const el=document.createElement('div');el.className='opt';
-    if(o.card&&o.card.img){el.classList.add('optcard');
-      el.innerHTML=`<img src="${o.card.img}" loading="lazy" alt="${o.card.name||''}" draggable="false"><span>${o.card.name||optLabel(o,s.context)}</span>`;}
-    else{el.textContent=optLabel(o,s.context);}
-    el.onclick=()=>submit([o.index]);all.appendChild(el);});
+}
+function updateConfirm(){
+  const s=STATE.select; if(!s)return;
+  const cb=document.getElementById('confirm');
+  if(cb)cb.textContent=`決定 (${picks.length}/${s.maxCount})`;
+}
+// 手札/場の選択肢カードを選ぶ：単一=即決定 / 複数=トグル
+function chooseCard(index){
+  const s=STATE.select; if(!s)return;
+  if(s.minCount===1&&s.maxCount===1){ submit([index]); return; }
+  if(picks.includes(index)){ picks=picks.filter(x=>x!==index); }
+  else{ if(picks.length>=s.maxCount)return; picks.push(index); }
+  renderBoard(); updateConfirm();
 }
 function renderBanner(){
   const b=document.getElementById('banner');
@@ -371,9 +386,11 @@ function renderBanner(){
 /* ---------- クリック→詳細＋操作モーダル ---------- */
 function bindClicks(){
   document.querySelectorAll('#youHand .pcard[data-cid]').forEach(el=>{
-    el.addEventListener('click',()=>{if(busy)return;openCard(+el.dataset.cid,handActions(+el.dataset.hand));});});
+    el.addEventListener('click',()=>{if(busy)return;
+      openCard(+el.dataset.cid,handActions(+el.dataset.hand).map(a=>({label:a.label,onclick:()=>chooseCard(a.index)})));});});
   document.querySelectorAll('#youActive .pcard[data-cid],#youBench .pcard[data-cid]').forEach(el=>{
-    el.addEventListener('click',()=>{if(busy)return;openCard(+el.dataset.cid,boardActions(+el.dataset.area,+el.dataset.pos));});});
+    el.addEventListener('click',()=>{if(busy)return;
+      openCard(+el.dataset.cid,boardActions(+el.dataset.area,+el.dataset.pos).map(a=>({label:a.label,onclick:()=>chooseCard(a.index)})));});});
   document.querySelectorAll('#oppActive .pcard[data-cid],#oppBench .pcard[data-cid],#oppHand .pcard[data-cid]').forEach(el=>{
     el.addEventListener('click',()=>{if(busy)return;openCard(+el.dataset.cid,[]);});});
   document.querySelectorAll('.pile[data-who]').forEach(b=>b.onclick=()=>showDiscard(b.dataset.who));
@@ -423,7 +440,8 @@ async function openCard(cid,actions){
     ${body}
     ${actHtml}`;
   document.querySelectorAll('#modal button[data-pi]').forEach(btn=>{
-    btn.onclick=()=>{const a=actions[+btn.dataset.pi];closeModal();submit([a.index]);};});
+    btn.onclick=()=>{const a=actions[+btn.dataset.pi];closeModal();
+      if(typeof a.onclick==='function'){a.onclick();}else{submit([a.index]);}};});
   document.querySelectorAll('#modal button.mvatk:not([disabled])').forEach(btn=>{
     btn.onclick=()=>confirmAction(`「${btn.dataset.nm}」で攻撃する`,[+btn.dataset.idx]);});
   showModal();
@@ -494,18 +512,38 @@ function playEvents(events){return new Promise(res=>{
   tick();});}
 
 /* ---------- 状態反映 ---------- */
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+async function playAiSteps(ns){
+  // AIの行動を1手ずつ（盤面も段階的に）約1秒間隔で再生する
+  const ask=document.getElementById('ask');
+  ask.classList.remove('hidden');
+  ask.innerHTML='<div class="hint">…相手の行動を再生中…</div>';
+  document.getElementById('aiControls').classList.add('hidden');
+  const sm=(typeof speedMult==='number'&&speedMult>0)?speedMult:1;
+  const delay=Math.max(250,Math.round(1000/sm));
+  for(const st of ns.aiSteps){
+    STATE=Object.assign({},ns,{board:st.board,select:null,result:-1});
+    renderBoard();
+    (st.events||[]).forEach(pushLog);
+    await sleep(delay);
+  }
+}
 async function apply(ns,playback){
+  const steps=(playback && ns.mode!=='ai' && ns.aiSteps && ns.aiSteps.length)?ns.aiSteps:null;
+  if(steps){busy=true;await playAiSteps(ns);busy=false;}
   STATE=ns; renderBoard(); renderBanner();
   if(STATE.mode==='ai'){
     document.getElementById('ask').classList.add('hidden');
-    if(playback){busy=true;await playEvents(ns.events);busy=false;}
+    if(playback&&!steps){busy=true;await playEvents(ns.events);busy=false;}
     renderAiControls();
     return;
   }
   document.getElementById('aiControls').classList.add('hidden');
   document.getElementById('ask').classList.remove('hidden');
-  document.getElementById('ask').innerHTML=(ns.events&&ns.events.length&&playback)?'<div class="hint">…経過を再生中…</div>':'';
-  if(playback){busy=true;await playEvents(ns.events);busy=false;}
+  if(playback&&!steps){
+    document.getElementById('ask').innerHTML=(ns.events&&ns.events.length)?'<div class="hint">…経過を再生中…</div>':'';
+    busy=true;await playEvents(ns.events);busy=false;
+  }
   renderAsk();
 }
 async function submit(p){closeModal();busy=true;
