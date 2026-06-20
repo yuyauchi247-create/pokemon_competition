@@ -33,7 +33,7 @@
 
 {% block script %}
 <script>
-let ALL_CARDS=[], CURRENT_DECK=[];
+let ALL_CARDS=[], CURRENT_DECK=[], EDIT_ID=null;
 const BASIC_ENERGY=new Set([1,2,3,4,5,6,7,8]);
 const ACE_SPEC_IDS=new Set([10,12,13,1080,1082,1085,1088,1089,1092,1093,1095,1096,1100,1104,1107,1109,1110,1111,1125,1126,1128,1155,1158,1159,1165,1167,1169,1247,1249]);
 
@@ -135,11 +135,33 @@ function renderBuilderDeck(){
 function builderMessage(msg){document.getElementById('builderMsg').textContent=msg||'';}
 async function saveBuilderDeck(){
   const name=document.getElementById('deckNameInput').value.trim()||'保存デッキ';
-  builderMessage('保存中…');
-  const r=await post('/api/user_decks',{name,cards:CURRENT_DECK});
+  builderMessage(EDIT_ID?'更新中…':'保存中…');
+  let r;
+  if(EDIT_ID){
+    const res=await fetch('/api/user_decks/'+EDIT_ID,{method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,cards:CURRENT_DECK})});
+    r=await res.json();
+  }else{
+    r=await post('/api/user_decks',{name,cards:CURRENT_DECK});
+  }
   if(r.error){builderMessage(r.error);return;}
-  // 保存したら選択画面に戻り、そのデッキを選択状態にする
-  location.href='/decks';
+  location.href='/decks';   // 保存/更新したら一覧へ
+}
+
+// ?edit=<id> があれば既存デッキを読み込んで編集モードにする
+async function maybeLoadEdit(){
+  const id=new URLSearchParams(location.search).get('edit');
+  if(!id)return;
+  const d=await get('/api/user_decks/'+id);
+  if(d.error){builderMessage(d.error);return;}
+  EDIT_ID=id;
+  CURRENT_DECK=[];
+  (d.cards||[]).forEach(c=>{for(let i=0;i<(c.count||0);i++)CURRENT_DECK.push(c.id);});
+  document.getElementById('deckNameInput').value=d.name||'';
+  const h=document.querySelector('#builder h2'); if(h)h.textContent='デッキ編集';
+  document.getElementById('saveDeckBtn').textContent='このデッキを更新';
+  renderBuilderDeck();renderCardLibrary();
 }
 
 ['cardSearch','cardTypeFilter','energyFilter','flagFilter','sortBy'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
@@ -147,7 +169,7 @@ document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/decks';}
 document.getElementById('saveDeckBtn').onclick=saveBuilderDeck;
 
 document.getElementById('cardLibrary').innerHTML='<div class="hint">カード一覧を読み込み中…</div>';
-get('/api/cards').then(d=>{ALL_CARDS=d.cards||[];renderCardLibrary();});
+get('/api/cards').then(d=>{ALL_CARDS=d.cards||[];renderCardLibrary();maybeLoadEdit();});
 renderBuilderDeck();
 </script>
 {% endblock %}

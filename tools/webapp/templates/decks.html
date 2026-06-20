@@ -13,6 +13,9 @@
   .deckTile .desc{font-size:12px;color:var(--sub);margin-bottom:8px;min-height:16px;}
   .deckTile .cards{display:flex;flex-wrap:wrap;gap:5px;}
   .deckTile .sect{font-size:11px;color:var(--teal);font-weight:800;margin:18px 0 8px;}
+  .deckActions{display:flex;gap:8px;margin-top:10px;}
+  .deckActions button{font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;}
+  .deckActions button.danger{color:#9b2a3a;border-color:#f0c4cb;}
 </style>
 {% endblock %}
 
@@ -46,12 +49,35 @@ function deckCardsHtml(cards){
 function renderDecks(boxId, decks, opts){
   const box=document.getElementById(boxId);
   if(!decks||!decks.length){box.innerHTML='<div class="emptyNote">'+(opts.empty||'デッキがありません。')+'</div>';return;}
-  box.innerHTML=decks.map(d=>`
-    <div class="deckTile">
+  box.innerHTML=decks.map(d=>{
+    const actions=opts.actions?`<div class="deckActions">
+        <button onclick="location.href='/builder?edit=${d.id}'">編集</button>
+        <button onclick="dupDeck('${d.id}')">複製</button>
+        <button class="danger" onclick="delDeck('${d.id}', this)">削除</button>
+      </div>`:'';
+    return `<div class="deckTile" data-name="${(d.name||'').replace(/"/g,'')}">
       <h3>${d.name}</h3>
       <div class="desc">${d.desc||''}</div>
       <div class="cards">${deckCardsHtml(d.cards)}</div>
-    </div>`).join('');
+      ${actions}
+    </div>`;
+  }).join('');
+}
+async function delDeck(id, btn){
+  const name=btn.closest('.deckTile').dataset.name||'このデッキ';
+  if(!confirm('「'+name+'」を削除しますか？'))return;
+  const res=await fetch('/api/user_decks/'+id,{method:'DELETE'});
+  const r=await res.json();
+  if(r.error){alert(r.error);return;}
+  location.reload();
+}
+async function dupDeck(id){
+  const d=await get('/api/user_decks/'+id);
+  if(d.error){alert(d.error);return;}
+  const cards=[];(d.cards||[]).forEach(c=>{for(let i=0;i<(c.count||0);i++)cards.push(c.id);});
+  const r=await post('/api/user_decks',{name:(d.name||'デッキ')+' のコピー',cards});
+  if(r.error){alert(r.error);return;}
+  location.reload();
 }
 function renderAgentDecks(agents){
   const box=document.getElementById('agentDecks');
@@ -63,7 +89,7 @@ function renderAgentDecks(agents){
   }).join('');
 }
 get('/api/config').then(c=>{
-  renderDecks('userDecks', c.userDecks||[], {empty:'保存済みデッキはまだありません。「＋ 新しいデッキを作成」から作れます。'});
+  renderDecks('userDecks', c.userDecks||[], {actions:true, empty:'保存済みデッキはまだありません。「＋ 新しいデッキを作成」から作れます。'});
   renderDecks('sampleDecks', c.sampleDecks||[], {empty:'サンプルデッキがありません。'});
   renderAgentDecks(c.agents||[]);
 });

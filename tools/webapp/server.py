@@ -34,7 +34,8 @@ from selection import (  # noqa: E402
     preview_agent_upload, read_sample_deck, read_user_agent_code,
     read_user_agent_deck, read_user_deck, user_agent_dir,
     sample_deck_options, save_user_agent, save_user_deck,
-    update_user_agent_deck, validate_ai_picks, validate_deck_for_builder,
+    update_user_agent_deck, update_user_deck, delete_user_deck,
+    validate_ai_picks, validate_deck_for_builder,
 )
 from sim_env import (  # noqa: E402
     to_observation_class, battle_start, battle_select, battle_finish,
@@ -1028,6 +1029,30 @@ def api_user_deck(deck_id):
         deck = read_user_deck(deck_id)
         opt = next((d for d in list_user_decks() if d["id"] == deck_id), {"id": deck_id, "name": deck_id})
         return jsonify({"id": deck_id, "name": opt["name"], "cards": _deck_preview(deck_card_counts(deck))})
+    except SelectionError as exc:
+        return _selection_error(str(exc), status=404)
+
+
+@app.route("/api/user_decks/<deck_id>", methods=["PUT"])
+def api_update_user_deck(deck_id):
+    """既存デッキを上書き更新（編集保存）。"""
+    payload = request.json or {}
+    try:
+        name = str(payload.get("name", "保存デッキ"))
+        deck = [int(v) for v in payload.get("cards", [])]
+        saved = update_user_deck(deck_id, name, deck)
+        counts = deck_card_counts(read_user_deck(saved["id"]))
+        return jsonify({**saved, "cards": _deck_preview(counts)})
+    except (SelectionError, ValueError, TypeError) as exc:
+        return _selection_error(str(exc))
+
+
+@app.route("/api/user_decks/<deck_id>", methods=["DELETE"])
+def api_delete_user_deck(deck_id):
+    """保存デッキを削除。"""
+    try:
+        delete_user_deck(deck_id)
+        return jsonify({"ok": True, "id": deck_id})
     except SelectionError as exc:
         return _selection_error(str(exc), status=404)
 
