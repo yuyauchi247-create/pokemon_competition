@@ -127,10 +127,11 @@ function renderBuilderDeck(){
   const warn=deckWarnings();
   document.getElementById('builderMsg').textContent=warn;
   document.getElementById('builderDeck').innerHTML=ids.map(id=>{
-    const c=cardById(id); const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:'<div class="ph"></div>';
-    return `<div class="deckLine"><div>${inner}</div><div><div class="nm">${c.name}</div><div class="sub">ID:${id} / ${c.cardType||''} ${c.typeJP||c.type||''}</div></div><b>×${counts[id]}</b><button type="button" class="minus" data-id="${id}">-</button></div>`;
-  }).join('')||'<div class="hint">左のカード一覧からクリックして追加してください。</div>';
-  document.querySelectorAll('#builderDeck button.minus').forEach(b=>b.onclick=()=>removeCard(+b.dataset.id));
+    const c=cardById(id);
+    const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name}</div>`;
+    return `<div class="libCard" data-id="${id}" title="${c.name} ×${counts[id]}（クリックで1枚減らす）">${inner}<div class="cid">ID:${id}</div><div class="have">×${counts[id]}</div><div class="nm">${c.name}</div></div>`;
+  }).join('')||'<div class="hint">右のカード一覧からクリックして追加してください。</div>';
+  document.querySelectorAll('#builderDeck .libCard').forEach(el=>el.onclick=()=>removeCard(+el.dataset.id));
 }
 function builderMessage(msg){document.getElementById('builderMsg').textContent=msg||'';}
 async function saveBuilderDeck(){
