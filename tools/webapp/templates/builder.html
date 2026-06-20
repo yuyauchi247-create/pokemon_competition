@@ -18,8 +18,10 @@
     <div class="builderTools">
       <input id="deckNameInput" type="text" placeholder="デッキ名（例: わたしの炎デッキ）">
       <input id="cardSearch" type="search" placeholder="カード名・IDで検索">
-      <select id="cardTypeFilter"><option value="">すべて</option><option>POKEMON</option><option>ITEM</option><option>SUPPORTER</option><option>STADIUM</option><option>TOOL</option><option>BASIC_ENERGY</option><option>SPECIAL_ENERGY</option></select>
-      <select id="energyFilter"><option value="">全タイプ</option><option>GRASS</option><option>FIRE</option><option>WATER</option><option>LIGHTNING</option><option>PSYCHIC</option><option>FIGHTING</option><option>DARKNESS</option><option>METAL</option><option>COLORLESS</option></select>
+      <select id="cardTypeFilter"><option value="">すべて</option><option value="POKEMON">ポケモン</option><option value="ITEM">グッズ</option><option value="SUPPORTER">サポート</option><option value="STADIUM">スタジアム</option><option value="TOOL">ポケモンのどうぐ</option><option value="BASIC_ENERGY">基本エネルギー</option><option value="SPECIAL_ENERGY">特殊エネルギー</option></select>
+      <select id="energyFilter"><option value="">全タイプ</option><option value="GRASS">草</option><option value="FIRE">炎</option><option value="WATER">水</option><option value="LIGHTNING">雷</option><option value="PSYCHIC">超</option><option value="FIGHTING">闘</option><option value="DARKNESS">悪</option><option value="METAL">鋼</option><option value="COLORLESS">無色</option></select>
+      <select id="flagFilter"><option value="">レアリティ問わず</option><option value="ex">ポケモンex</option><option value="MEGA">メガex</option><option value="tera">テラスタル</option><option value="ACE">ACE SPEC</option></select>
+      <select id="sortBy"><option value="">並び: ID順</option><option value="hp">HP高い順</option><option value="dmg">攻撃力高い順</option><option value="type">タイプ順</option></select>
     </div>
     <div class="builderGrid">
       <div class="library"><h3>カード一覧</h3><div id="cardLibrary" class="cardLibrary"></div></div>
@@ -48,14 +50,20 @@ function renderCardLibrary(){
   const q=(document.getElementById('cardSearch').value||'').toLowerCase().trim();
   const ct=document.getElementById('cardTypeFilter').value;
   const et=document.getElementById('energyFilter').value;
+  const fl=document.getElementById('flagFilter').value;
+  const sort=document.getElementById('sortBy').value;
   const counts=deckCounts();
-  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et));
+  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et)&&(!fl||(c.flags||[]).includes(fl)));
+  if(sort==='hp')        cards=cards.slice().sort((a,b)=>(b.hp||0)-(a.hp||0)||a.id-b.id);
+  else if(sort==='dmg')  cards=cards.slice().sort((a,b)=>(b.maxDamage||0)-(a.maxDamage||0)||a.id-b.id);
+  else if(sort==='type') cards=cards.slice().sort((a,b)=>String(a.type||'').localeCompare(String(b.type||''))||a.id-b.id);
   document.getElementById('cardLibrary').innerHTML=cards.map(c=>{
     const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name}</div>`;
     const cnt=counts[c.id]||0;
     const maxed=(!BASIC_ENERGY.has(c.id)&&cnt>=4)||(ACE_SPEC_IDS.has(c.id)&&(cnt>=1||deckHasAceSpec()));
     const have=cnt?`<div class="have${maxed?' maxed':''}">×${cnt}</div>`:'';
-    return `<div class="libCard${maxed?' disabled':''}" data-id="${c.id}" title="${c.name} ID:${c.id}">${inner}<div class="cid">ID:${c.id}</div>${have}<div class="nm">${c.name}</div></div>`;
+    const stat=c.hp?`<div class="cid">HP${c.hp}${c.maxDamage?` ⚔${c.maxDamage}`:''}</div>`:'';
+    return `<div class="libCard${maxed?' disabled':''}" data-id="${c.id}" title="${c.name} ID:${c.id}">${inner}<div class="cid">ID:${c.id}</div>${stat}${have}<div class="nm">${c.name}</div></div>`;
   }).join('')||'<div class="hint">該当カードがありません</div>';
   document.querySelectorAll('#cardLibrary .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id));
 }
@@ -134,7 +142,7 @@ async function saveBuilderDeck(){
   location.href='/decks';
 }
 
-['cardSearch','cardTypeFilter','energyFilter'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
+['cardSearch','cardTypeFilter','energyFilter','flagFilter','sortBy'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
 document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/decks';};
 document.getElementById('saveDeckBtn').onclick=saveBuilderDeck;
 

@@ -895,6 +895,22 @@ def _deck_preview(counts):
     return [{**card_meta(c["cardId"]), "count": c["count"]} for c in counts]
 
 
+def _max_attack_damage(detail):
+    """ワザの「ダメージ」表記(例 '130', '90+', '120×')の先頭数値の最大値。技無しは0。"""
+    best = 0
+    for m in detail.get("moves", []):
+        s = str(m.get("damage") or "").strip()
+        num = ""
+        for ch in s:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        if num:
+            best = max(best, int(num))
+    return best
+
+
 @app.route("/api/cards", methods=["GET"])
 def api_cards():
     """デッキ作成画面用: PDF 39ページまでの使用可能カード(ID 1..1267)。"""
@@ -909,6 +925,7 @@ def api_cards():
             "category": detail.get("category", ""),
             "rule": detail.get("rule", ""),
             "evolvesFrom": detail.get("evolvesFrom", ""),
+            "maxDamage": _max_attack_damage(detail),  # 攻撃力ソート用
         })
     return jsonify({"cards": cards})
 
