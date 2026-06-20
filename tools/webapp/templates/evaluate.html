@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}個別AI評価 | ポケカ{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/'">ホームへ</button>
+{% endblock %}
+
+{% block head %}
+<style>
+  .tbl{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  .tbl th,.tbl td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:center;font-size:13px;}
+  .tbl th{background:#f1f7ff;color:var(--ink);font-weight:800;}
+  .tbl td.name{text-align:left;font-weight:700;}
+  .sect{font-size:14px;color:var(--teal);font-weight:800;margin:22px 0 10px;}
+  .evalTools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0;}
+  .evalTools select{min-width:260px;}
+  .scoreCard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 22px;margin:10px 0;display:flex;align-items:center;gap:24px;flex-wrap:wrap;}
+  .scoreCard .big{font-size:42px;font-weight:900;color:var(--teal);line-height:1;}
+  .scoreCard .wld{font-size:14px;color:var(--muted);}
+  .tbl td.win{background:#e8f6ee;color:#1f7a44;font-weight:800;}
+  .tbl td.lose{background:#ffeef0;color:#9b2a3a;font-weight:800;}
+  .spin{display:inline-block;animation:sp 1s linear infinite;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="crumb"><a href="/">ホーム</a> › 個別AI評価</div>
+  <h2 class="pageTitle">個別AI評価（1体 vs 全体）</h2>
+  <p class="pageLead">登録AIを1体選ぶと、他の全AIと先攻/後攻で各{{10}}試合ずつ対戦し、対フィールド勝率と相手別の得意/苦手を出します（総当たり全体より速く・軽い）。</p>
+  <div class="evalTools">
+    <select id="agentSel"></select>
+    <button id="runBtn" disabled>評価を開始</button>
+  </div>
+  <div id="msg" class="hint"></div>
+  <div id="result"></div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+let POLL=null;
+function setMsg(m=''){document.getElementById('msg').innerHTML=m;}
+
+async function loadAgents(){
+  const d=await get('/api/agents');
+  const ags=d.agents||[];
+  const sel=document.getElementById('agentSel');
+  sel.innerHTML=ags.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+  const ok=ags.length>=2;
+  document.getElementById('runBtn').disabled=!ok;
+  setMsg(ok?`登録AI ${ags.length}体。評価したいAIを選んで「評価を開始」。`
+           :`登録AIが${ags.length}体です。評価には2体以上必要です。`);
+}
+
+function renderResult(r){
+  const c=r.challenger, vs=r.vs||[];
+  let html=`<div class="scoreCard">
+      <div><div class="big">${c.winRate}%</div><div class="wld">対フィールド勝率</div></div>
+      <div><div class="wld">${c.wins}勝 ${c.losses}敗 ${c.draws}分 ／ ${c.games}試合</div>
+           <div class="wld">対戦相手 ${vs.length}体・${r.games_per_pair}試合/相手・${r.elapsed_s}秒</div></div>
+    </div>`;
+  html+='<div class="sect">相手別の成績（勝ち数順）</div>';
+  html+='<table class="tbl"><tr><th>相手AI</th><th>勝</th><th>敗</th><th>分</th><th>勝率</th></tr>';
+  vs.forEach(s=>{
+    const cls=s.winRate>=60?'win':(s.winRate<=40?'lose':'');
+    html+=`<tr><td class="name">${s.name}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.draws}</td><td class="${cls}">${s.winRate}%</td></tr>`;
+  });
+  html+='</table>';
+  document.getElementById('result').innerHTML=html;
+}
+
+async function poll(jobId){
+  const d=await get('/api/evaluate/'+jobId);
+  if(d.status==='done'){
+    clearInterval(POLL);POLL=null;
+    setMsg(`完了: ${d.meta.name}`);
+    renderResult(d.result);
+    document.getElementById('runBtn').disabled=false;
+  }else if(d.status==='failed'){
+    clearInterval(POLL);POLL=null;
+    setMsg('評価に失敗しました（プロセスが異常終了）。');
+    document.getElementById('runBtn').disabled=false;
+  }else{
+    setMsg(`<span class="spin">⏳</span> 評価中…（${d.meta.name} vs ${d.meta.opponents}体）。AIの重さによっては数分〜数十分かかります。`);
+  }
+}
+
+document.getElementById('runBtn').onclick=async()=>{
+  const aid=document.getElementById('agentSel').value;
+  if(!aid)return;
+  document.getElementById('runBtn').disabled=true;
+  document.getElementById('result').innerHTML='';
+  setMsg('<span class="spin">⏳</span> 評価を開始しています…');
+  const r=await post('/api/evaluate',{agent_id:aid});
+  if(r.error){setMsg(r.error);document.getElementById('runBtn').disabled=false;return;}
+  if(POLL)clearInterval(POLL);
+  POLL=setInterval(()=>poll(r.job_id),3000);
+  poll(r.job_id);
+};
+
+loadAgents();
+</script>
+{% endblock %}

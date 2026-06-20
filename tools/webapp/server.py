@@ -14,6 +14,7 @@ import json
 import os
 import random
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -51,6 +52,11 @@ ALLOW_AGENT_UPLOAD = os.environ.get("POKECA_ALLOW_AGENT_UPLOAD", "1") != "0"
 
 # 対戦ログの保存先（対戦ごとに1ファイル）。
 LOGS_DIR = Path(__file__).resolve().parents[2] / "data" / "logs"
+
+# 個別AI評価（challenger）のジョブ置き場と実行スクリプト。
+APP_ROOT = Path(__file__).resolve().parents[2]
+EVAL_JOBS_DIR = Path(tempfile.gettempdir()) / "pokeca_eval_jobs"
+EVAL_GAMES_PER_PAIR = 10  # 個別評価: 各相手と先攻/後攻×この試合数
 
 # ---- 複数同時対戦の管理 ----
 # GAMES: gid -> ゲーム状態。mode は "human"（人 vs AI）/ "ai"（AI vs AI 観戦）。
@@ -732,6 +738,79 @@ def replay():
 @app.route("/tournament")
 def tournament():
     return render_template("tournament.html")
+
+
+@app.route("/evaluate")
+def evaluate_page():
+    return render_template("evaluate.html")
+
+
+def _pid_alive(pid):
+    """プロセスが生存しているか（POSIX）。"""
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+@app.route("/api/evaluate", methods=["POST"])
+def api_evaluate_start():
+    """個別AI評価を開始: run_tournament.py --challenger を別プロセスで起動し job_id を返す。
+
+    Webワーカー(1本)を塞がないよう、重い対戦は子プロセスに逃がしてポーリングさせる。
+    """
+    data = request.get_json(silent=True) or {}
+    aid = data.get("agent_id")
+    metas = list_user_agents()
+    if len(metas) < 2:
+        return _selection_error("評価には登録AIが2体以上必要です。")
+    m = next((x for x in metas if x["id"] == aid), None)
+    if m is None:
+        return _selection_error("指定のAIが見つかりません。")
+    EVAL_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    job_id = uuid.uuid4().hex[:12]
+    jobfile = EVAL_JOBS_DIR / f"{job_id}.json"
+    workers = max(1, os.cpu_count() or 2)
+    cmd = [sys.executable, "tools/run_tournament.py",
+           "--challenger", aid,
+           "--games-per-pair", str(EVAL_GAMES_PER_PAIR),
+           "--workers", str(workers),
+           "--out", str(jobfile)]
+    proc = subprocess.Popen(
+        cmd, cwd=str(APP_ROOT),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    (EVAL_JOBS_DIR / f"{job_id}.meta").write_text(json.dumps({
+        "agent_id": aid, "name": m["name"], "pid": proc.pid,
+        "opponents": len(metas) - 1,
+        "games_per_pair": EVAL_GAMES_PER_PAIR,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }), encoding="utf-8")
+    return jsonify({"job_id": job_id, "name": m["name"],
+                    "opponents": len(metas) - 1})
+
+
+@app.route("/api/evaluate/<job_id>", methods=["GET"])
+def api_evaluate_status(job_id):
+    """個別AI評価の進捗/結果を返す（done / running / failed）。"""
+    if not job_id.isalnum():
+        abort(404)
+    metafile = EVAL_JOBS_DIR / f"{job_id}.meta"
+    jobfile = EVAL_JOBS_DIR / f"{job_id}.json"
+    if not metafile.exists():
+        abort(404)
+    meta = json.loads(metafile.read_text(encoding="utf-8"))
+    if jobfile.exists():
+        try:
+            result = json.loads(jobfile.read_text(encoding="utf-8"))
+            return jsonify({"status": "done", "meta": meta, "result": result})
+        except Exception:
+            return jsonify({"status": "running", "meta": meta})  # 書き込み中
+    alive = _pid_alive(meta.get("pid"))
+    return jsonify({"status": "running" if alive else "failed", "meta": meta})
 
 
 @app.route("/api/tournament", methods=["POST"])
