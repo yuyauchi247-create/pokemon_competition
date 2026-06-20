@@ -50,12 +50,17 @@ function deckCardsHtml(cards){
 function renderDecks(boxId, decks, opts){
   const box=document.getElementById(boxId);
   if(!decks||!decks.length){box.innerHTML='<div class="emptyNote">'+(opts.empty||'デッキがありません。')+'</div>';return;}
-  box.innerHTML=decks.map(d=>{
-    const actions=opts.actions?`<div class="deckActions">
+  box.innerHTML=decks.map((d,i)=>{
+    let actions='';
+    if(opts.actions){actions=`<div class="deckActions">
         <button onclick="location.href='/builder?edit=${d.id}'">編集</button>
         <button onclick="dupDeck('${d.id}')">複製</button>
         <button class="danger" onclick="delDeck('${d.id}', this)">削除</button>
-      </div>`:'';
+      </div>`;}
+    else if(opts.copyKind){const has=d.cards&&d.cards.length;actions=`<div class="deckActions">
+        <button ${has?'':'disabled'} onclick="copyDeck('${opts.copyKind}',${i})">自分のデッキに複製</button>
+        ${has?'':'<span class="hint">デッキ読取不可</span>'}
+      </div>`;}
     return `<div class="deckTile" data-name="${(d.name||'').replace(/"/g,'')}">
       <h3>${d.name}</h3>
       <div class="desc">${d.desc||''}</div>
@@ -75,23 +80,37 @@ async function delDeck(id, btn){
 async function dupDeck(id){
   const d=await get('/api/user_decks/'+id);
   if(d.error){alert(d.error);return;}
-  const cards=[];(d.cards||[]).forEach(c=>{for(let i=0;i<(c.count||0);i++)cards.push(c.id);});
+  const cards=expandCards(d.cards);
   const r=await post('/api/user_decks',{name:(d.name||'デッキ')+' のコピー',cards});
   if(r.error){alert(r.error);return;}
+  location.reload();
+}
+function expandCards(cards){const out=[];(cards||[]).forEach(c=>{for(let i=0;i<(c.count||0);i++)out.push(c.id);});return out;}
+async function copyDeck(kind, idx){
+  const d=kind==='sample'?(CFG.sampleDecks||[])[idx]:(CFG.agents||[])[idx];
+  if(!d){alert('デッキが見つかりません。');return;}
+  const cards=expandCards(d.cards);
+  if(!cards.length){alert('このデッキはカード情報が読めないため複製できません。');return;}
+  const r=await post('/api/user_decks',{name:(d.name||'デッキ')+' のコピー',cards});
+  if(r.error){alert('複製できません: '+r.error);return;}
   location.reload();
 }
 function renderAgentDecks(agents){
   const box=document.getElementById('agentDecks');
   if(!agents||!agents.length){box.innerHTML='<div class="emptyNote">登録AIがありません。「AIエージェント登録」から追加できます。</div>';return;}
-  box.innerHTML=agents.map(a=>{
-    const body=(a.cards&&a.cards.length)?`<div class="cards">${deckCardsHtml(a.cards)}</div>`
+  box.innerHTML=agents.map((a,i)=>{
+    const has=a.cards&&a.cards.length;
+    const body=has?`<div class="cards">${deckCardsHtml(a.cards)}</div>`
       :'<div class="hint">デッキはファイルから読み取れません（対戦開始時にAIが決定）。</div>';
-    return `<div class="deckTile"><h3>🤖 ${a.name}</h3><div class="desc">${a.deck_source||''}</div>${body}</div>`;
+    const actions=`<div class="deckActions"><button ${has?'':'disabled'} onclick="copyDeck('agent',${i})">自分のデッキに複製</button>${has?'':'<span class="hint">複製不可</span>'}</div>`;
+    return `<div class="deckTile"><h3>🤖 ${a.name}</h3><div class="desc">${a.deck_source||''}</div>${body}${actions}</div>`;
   }).join('');
 }
+let CFG=null;
 get('/api/config').then(c=>{
+  CFG=c;
   renderDecks('userDecks', c.userDecks||[], {actions:true, empty:'保存済みデッキはまだありません。「＋ 新しいデッキを作成」から作れます。'});
-  renderDecks('sampleDecks', c.sampleDecks||[], {empty:'サンプルデッキがありません。'});
+  renderDecks('sampleDecks', c.sampleDecks||[], {copyKind:'sample', empty:'サンプルデッキがありません。'});
   renderAgentDecks(c.agents||[]);
 });
 </script>
