@@ -9,9 +9,7 @@
     <div id="roomInfo" class="hint" style="margin-bottom:10px"></div>
     <div class="choice">
       <h3>あなたのデッキ</h3>
-      <label><input type="radio" name="deck_mode" value="sample" checked> サンプルデッキから選ぶ</label>
-      <div id="sampleDeckList" class="deckList"></div>
-      <label style="margin-top:14px"><input type="radio" name="deck_mode" value="user"> 保存済みデッキから選ぶ</label>
+      <label><input type="radio" name="deck_mode" value="user" checked> 保存済みデッキから選ぶ</label>
       <div id="userDeckList" class="deckList"></div>
       <label style="margin-top:14px"><input type="radio" name="deck_mode" value="agent"> 登録AIのデッキを使う</label>
       <select id="agentDeckSel" name="deck_agent_id" style="margin-left:24px"></select>
@@ -64,7 +62,6 @@ document.getElementById('joinForm').onsubmit=async e=>{
   if(!GID){jmsg('対戦IDが指定されていません。招待URLから開いてください。');return;}
   const fd=new FormData(e.currentTarget);
   const dm=fd.get('deck_mode');
-  if(dm==='sample'&&!fd.get('deck_id')){jmsg('サンプルデッキを選択してください。');return;}
   if(dm==='user'&&!fd.get('user_deck_id')){jmsg('保存済みデッキを選択してください。');return;}
   if(dm==='agent'&&!fd.get('deck_agent_id')){jmsg('使用する登録AIのデッキを選択してください。');return;}
   if(dm==='custom'&&!document.getElementById('deckFile').files.length){jmsg('デッキCSVを選択してください。');return;}
@@ -79,7 +76,6 @@ document.getElementById('joinForm').onsubmit=async e=>{
 if(!GID){jmsg('対戦IDが指定されていません。招待URLから開いてください。');}
 else{document.getElementById('roomInfo').textContent='対戦ID: '+GID;}
 get('/api/config').then(c=>{
-  renderDeckList('sampleDeckList', c.sampleDecks, 'jdeck', selectDeck);
   renderDeckList('userDeckList', c.userDecks||[], 'juser', selectUserDeck);
   const deckAgents=(c.agents||[]).filter(a=>a.cards&&a.cards.length);
   const sel=document.getElementById('agentDeckSel');

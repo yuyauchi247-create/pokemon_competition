@@ -31,9 +31,6 @@
   <div class="sect">あなたの保存済みデッキ</div>
   <div id="userDecks" class="deckGrid"></div>
 
-  <div class="sect">サンプルデッキ</div>
-  <div id="sampleDecks" class="deckGrid"></div>
-
   <div class="sect">登録AIのデッキ</div>
   <div id="agentDecks" class="deckGrid"></div>
 </div>
@@ -110,7 +107,6 @@ let CFG=null;
 get('/api/config').then(c=>{
   CFG=c;
   renderDecks('userDecks', c.userDecks||[], {actions:true, empty:'保存済みデッキはまだありません。「＋ 新しいデッキを作成」から作れます。'});
-  renderDecks('sampleDecks', c.sampleDecks||[], {copyKind:'sample', empty:'サンプルデッキがありません。'});
   renderAgentDecks(c.agents||[]);
 });
 </script>

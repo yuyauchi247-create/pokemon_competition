@@ -802,6 +802,7 @@ def api_evaluate_start():
            "--challenger", aid,
            "--games-per-pair", str(EVAL_GAMES_PER_PAIR),
            "--workers", str(workers),
+           "--progress-file", str(EVAL_JOBS_DIR / f"{job_id}.progress"),
            "--out", str(jobfile)]
     proc = subprocess.Popen(
         cmd, cwd=str(APP_ROOT),
@@ -832,9 +833,17 @@ def api_evaluate_status(job_id):
             result = json.loads(jobfile.read_text(encoding="utf-8"))
             return jsonify({"status": "done", "meta": meta, "result": result})
         except Exception:
-            return jsonify({"status": "running", "meta": meta})  # 書き込み中
-    alive = _pid_alive(meta.get("pid"))
-    return jsonify({"status": "running" if alive else "failed", "meta": meta})
+            pass  # 書き込み中 → running 扱い
+    prog = None
+    progfile = EVAL_JOBS_DIR / f"{job_id}.progress"
+    if progfile.exists():
+        try:
+            prog = json.loads(progfile.read_text(encoding="utf-8"))
+        except Exception:
+            prog = None
+    if not jobfile.exists() and not _pid_alive(meta.get("pid")):
+        return jsonify({"status": "failed", "meta": meta, "progress": prog})
+    return jsonify({"status": "running", "meta": meta, "progress": prog})
 
 
 @app.route("/api/tournament", methods=["POST"])
@@ -974,14 +983,9 @@ def api_delete_agent(agent_id):
 
 @app.route("/api/config", methods=["GET"])
 def api_config():
-    """サンプル・保存済みデッキ一覧（中身プレビュー込み）を返す。"""
+    """保存済みデッキ・登録AIデッキ一覧（中身プレビュー込み）を返す。"""
+    # サンプルデッキはUIから非表示（内部フォールバックでのみ使用するため返さない）。
     sample_decks = []
-    for opt in sample_deck_options():
-        try:
-            cards = deck_card_counts(read_sample_deck(opt["id"]))
-        except SelectionError:
-            cards = []
-        sample_decks.append({**opt, "cards": _deck_preview(cards)})
 
     user_decks = []
     for opt in list_user_decks():
