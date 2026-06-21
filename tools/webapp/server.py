@@ -437,7 +437,7 @@ def _collect_events(g, obs):
     """obs.logs を日本語イベントに変換して蓄積（画面表示用 events と保存用 log の両方）。"""
     try:
         ob = to_observation_class(obs)
-        evs = translate_logs(ob, HUMAN)
+        evs = translate_logs(ob, HUMAN, st=g.setdefault("_drawst", {}))
         g["events"].extend(evs)
         turn = ob.current.turn if ob.current else None
         for e in evs:
@@ -541,7 +541,8 @@ def _advance_until_human(g):
         # obs.logs は「直前のselect以降の差分」なので、この1手ぶんの全イベントをそのまま使う。
         # （以前は累積前提で allev[_prev:] を取っており、AIターン再生でイベントが欠落/ズレていた）
         try:
-            newev = translate_logs(to_observation_class(g["obs"]), HUMAN)
+            newev = translate_logs(to_observation_class(g["obs"]), HUMAN,
+                                   st=g.setdefault("_drawst", {}))
         except Exception:
             newev = []
         try:
