@@ -69,7 +69,13 @@
   <section>
     <h3>🪜 挑戦ラダー <span id="progressTxt" class="progressTxt" style="margin-left:auto;font-size:13px"></span></h3>
     <div id="ladder" class="ladder"><div class="empty" style="color:var(--sub)">読み込み中…</div></div>
-    <div style="text-align:right;margin-top:8px"><button class="reset" id="resetBtn" type="button">進行状況をリセット</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:8px;flex-wrap:wrap">
+      <span id="refreshStatus" style="font-size:12px;color:var(--sub)"></span>
+      <span>
+        <button class="reset" id="resetBtn" type="button">進行状況をリセット</button>
+        <button class="gray" id="refreshBtn" type="button" style="font-size:12px;padding:6px 12px">🔄 ランキングを更新</button>
+      </span>
+    </div>
   </section>
 
   <!-- あなたのデッキ -->
@@ -240,6 +246,39 @@ async function registerHof(){
   }catch(e){setMsg('登録に失敗しました。');btn.disabled=false;}
 }
 
+/* ---- ランキング更新（総当たりをバックグラウンド実行）---- */
+let refreshTimer=null;
+async function pollRefresh(){
+  try{
+    const s=await get('/api/royale/refresh');
+    const ss=document.getElementById('refreshStatus');
+    if(s.running){
+      ss.textContent=`ランキング更新中… ${s.done}/${s.total||'?'} 試合`;
+      refreshTimer=setTimeout(pollRefresh,2000);
+    }else{
+      ss.textContent='ランキングを更新しました。';
+      document.getElementById('refreshBtn').disabled=false;
+      // ラダー再読み込み
+      const rank=await get('/api/royale/ranking');
+      LADDER=rank.ladder||[]; STEPS=LADDER.slice().reverse();
+      if(progress>STEPS.length) setProgress(STEPS.length);
+      renderLadder();
+      setTimeout(()=>{ss.textContent='';},5000);
+    }
+  }catch(e){document.getElementById('refreshBtn').disabled=false;}
+}
+async function refreshRanking(){
+  if(!confirm('全登録AIの総当たりを実行してランキングを更新します。数分〜十数分かかる場合があります。実行しますか？'))return;
+  const btn=document.getElementById('refreshBtn');btn.disabled=true;
+  document.getElementById('refreshStatus').textContent='ランキング更新を開始中…';
+  try{
+    const r=await post('/api/royale/refresh',{});
+    if(r.error){setMsg(r.error);btn.disabled=false;document.getElementById('refreshStatus').textContent='';return;}
+    if(refreshTimer)clearTimeout(refreshTimer);
+    pollRefresh();
+  }catch(e){btn.disabled=false;document.getElementById('refreshStatus').textContent='';setMsg('更新の開始に失敗しました。');}
+}
+
 /* ---- 初期化 ---- */
 function handleClearedParam(){
   // /battle 勝利後に ?cleared=<step> で戻ってくる
@@ -257,6 +296,9 @@ function handleClearedParam(){
   document.getElementById('resetBtn').addEventListener('click',()=>{
     if(confirm('挑戦の進行状況を最初（第1戦）に戻します。よろしいですか？')){setProgress(0);renderLadder();}
   });
+  document.getElementById('refreshBtn').addEventListener('click',refreshRanking);
+  // 既に更新ジョブが走っていれば進捗表示を再開
+  get('/api/royale/refresh').then(s=>{if(s&&s.running){document.getElementById('refreshBtn').disabled=true;pollRefresh();}}).catch(()=>{});
   loadHof();
   try{
     const [cfg,rank]=await Promise.all([get('/api/config'),get('/api/royale/ranking')]);
