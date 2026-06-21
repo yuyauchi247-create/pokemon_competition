@@ -535,25 +535,40 @@ def _advance_until_human(g):
     obs = g["obs"]
     g["ai_steps"] = []          # AIの1手ごとの盤面スナップショット（ライブ再生用）
     _human_mode = g.get("mode") != "ai"
-    _prev = [0]
+    st = g.setdefault("_drawst", {})  # ドロー種別判定の状態（delta跨ぎ）
 
-    def _snap():
-        # obs.logs は「直前のselect以降の差分」なので、この1手ぶんの全イベントをそのまま使う。
-        # （以前は累積前提で allev[_prev:] を取っており、AIターン再生でイベントが欠落/ズレていた）
+    def _emit(record_step):
+        """g["obs"] の差分ログを「1回だけ」翻訳し、保存/表示ログ(events/log)へ蓄積する。
+
+        obs.logs は select 毎の差分なので、この関数で各 delta を1回ずつ処理すれば
+        ライブ(ai_steps)も保存(log)も同じイベント列・同じドロー種別分類になる。
+        record_step=True のときは盤面スナップショットも ai_steps に積む（AIの1手の再生用）。
+        以前は AIの各手を _snap で ai_steps にしか積まず、保存用 log は最終 obs だけを
+        別途 _collect_events で処理していたため、途中ログ欠落＋最終 delta の二重変換による
+        分類ズレが起きていた。それを解消する。"""
         try:
-            newev = translate_logs(to_observation_class(g["obs"]), HUMAN,
-                                   st=g.setdefault("_drawst", {}))
+            ob_ = to_observation_class(g["obs"])
         except Exception:
-            newev = []
-        try:
-            board = _frame_board(g)
-        except Exception:
-            board = None
-        if board is None:
-            return
-        if _human_mode and isinstance(board.get("opp"), dict):
-            board["opp"]["hand"] = None   # 相手手札は伏せる
-        g["ai_steps"].append({"board": board, "events": newev})
+            return []
+        evs = translate_logs(ob_, HUMAN, st=st)
+        if evs:
+            g["events"].extend(evs)
+            turn = ob_.current.turn if ob_.current else None
+            for e in evs:
+                g["log"].append({"turn": turn, **e})
+        if record_step:
+            try:
+                board = _frame_board(g)
+            except Exception:
+                board = None
+            if board is not None:
+                if _human_mode and isinstance(board.get("opp"), dict):
+                    board["opp"]["hand"] = None   # 相手手札は伏せる
+                g["ai_steps"].append({"board": board, "events": evs})
+        return evs
+
+    # 入口（人間の操作結果 or 初期 obs）の差分を1回だけ反映する。
+    _emit(record_step=False)
 
     steps = 0
     while steps < 100000:
@@ -580,16 +595,15 @@ def _advance_until_human(g):
                 pick = g["rng"].randint(0, len(ob.select.option) - 1)
                 obs = battle_select([pick])
                 g["obs"] = obs
+                _emit(record_step=False)  # コイン等の差分も保存ログへ反映
                 steps += 1
                 continue
             break  # 外部操作（人間 or ステップ）の入力待ち
         obs = battle_select(_ai_pick(g, ob.select, obs))
         g["obs"] = obs
-        _snap()                 # AIの1手ごとに盤面＋差分イベントを記録
+        _emit(record_step=True)  # AIの1手: ai_steps と 保存ログ の両方へ
         steps += 1
     g["obs"] = obs
-    # 最終 obs のログ（＝前回選択以降の全出来事）だけを記録
-    _collect_events(g, g["obs"])
     _capture_frame(g)  # リプレイ用スナップショット
     if g.get("result", -1) != -1:
         _save_match_log(g)
@@ -882,7 +896,8 @@ def api_tournament():
         except SelectionError:
             pass
     n = len(loaded)
-    stand = {a["id"]: {"name": a["name"], "wins": 0, "losses": 0, "draws": 0, "games": 0}
+    stand = {a["id"]: {"id": a["id"], "name": a["name"], "wins": 0,
+                       "losses": 0, "draws": 0, "games": 0}
              for a in loaded}
     matches = []
     for i in range(n):
@@ -907,6 +922,14 @@ def api_tournament():
     standings = sorted(stand.values(), key=lambda s: (-s["wins"], s["losses"]))
     for s in standings:
         s["winRate"] = round(100 * s["wins"] / s["games"]) if s["games"] else 0
+    # バトルロワイヤルのラダー元データも更新（id付き standings を永続化）。
+    try:
+        ROYALE_DIR.mkdir(parents=True, exist_ok=True)
+        ROYALE_RANKING_FILE.write_text(
+            json.dumps({"n": n, "matches": len(matches), "standings": standings},
+                       ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
     return jsonify({"n": n, "standings": standings, "matches": matches})
 
 
@@ -1151,6 +1174,55 @@ def _royale_ladder():
 def api_royale_ranking():
     """バトルロワイヤルの相手ラダー（現存TOP5）を返す。"""
     return jsonify({"ladder": _royale_ladder()})
+
+
+@app.route("/api/royale/refresh", methods=["POST"])
+def api_royale_refresh():
+    """登録AIの総当たりをバックグラウンドで実行し、ロワイヤルのラダー元データ
+    （ranking.json）を更新する。重い処理なので子プロセスに逃がす（評価ジョブと同方式）。"""
+    metas = list_user_agents()
+    if len(metas) < 2:
+        return _selection_error("ランキング更新には登録AIが2体以上必要です。")
+    ROYALE_DIR.mkdir(parents=True, exist_ok=True)
+    job_id = uuid.uuid4().hex[:12]
+    workers = max(1, (os.cpu_count() or 2) - 1)
+    cmd = [sys.executable, "tools/run_tournament.py",
+           "--games-per-pair", "2",
+           "--workers", str(workers),
+           "--progress-file", str(ROYALE_DIR / "_refresh.progress"),
+           "--out", str(ROYALE_RANKING_FILE)]
+    proc = subprocess.Popen(
+        cmd, cwd=str(APP_ROOT),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    (ROYALE_DIR / "_refresh.meta").write_text(json.dumps({
+        "job_id": job_id, "pid": proc.pid, "agents": len(metas),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }), encoding="utf-8")
+    return jsonify({"job_id": job_id, "agents": len(metas)})
+
+
+@app.route("/api/royale/refresh", methods=["GET"])
+def api_royale_refresh_status():
+    """ランキング更新ジョブの進捗（稼働中か・done/total）を返す。"""
+    running = False
+    meta_p = ROYALE_DIR / "_refresh.meta"
+    if meta_p.exists():
+        try:
+            running = _pid_alive(json.loads(
+                meta_p.read_text(encoding="utf-8")).get("pid"))
+        except (OSError, ValueError):
+            pass
+    prog = {"done": 0, "total": 0}
+    prog_p = ROYALE_DIR / "_refresh.progress"
+    if prog_p.exists():
+        try:
+            prog = json.loads(prog_p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+    done, total = prog.get("done", 0), prog.get("total", 0)
+    return jsonify({"running": running, "done": done, "total": total,
+                    "complete": (not running) and total > 0 and done >= total})
 
 
 def _royale_hof_load():
