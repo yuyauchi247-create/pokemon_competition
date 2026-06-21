@@ -344,7 +344,6 @@ def main():
                 if done % 50 == 0:
                     print(f"  {done}/{total} ({time.time() - t0:.0f}s)",
                           flush=True)
-    _write_progress(args.progress_file, total, total)
     dt = time.time() - t0
     print(f"done {len(results)} matches in {dt:.1f}s "
           f"({dt / max(1, len(results)) * 1000:.0f} ms/match wall)", flush=True)
@@ -356,6 +355,8 @@ def main():
                "challenger": summary, "vs": vs}
         Path(args.out).write_text(
             json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+        # 出力ファイルを書き終えてから100%にする（完了表示と古い再読込の競合回避）。
+        _write_progress(args.progress_file, total, total)
         print(f"wrote {args.out}", flush=True)
         print(f"\n=== {summary['name']} 対フィールド ===", flush=True)
         print(f"  {summary['wins']}W {summary['losses']}L {summary['draws']}D "
@@ -372,6 +373,8 @@ def main():
            "workers": workers, "standings": standings}
     Path(args.out).write_text(
         json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 出力ファイルを書き終えてから100%にする（完了表示と古い再読込の競合回避）。
+    _write_progress(args.progress_file, total, total)
     print(f"wrote {args.out}", flush=True)
     for rank, s in enumerate(standings[:10], 1):
         print(f"  {rank}. {s['name']}: {s['wins']}W {s['losses']}L "

@@ -799,6 +799,14 @@ def evaluate_page():
     return render_template("evaluate.html")
 
 
+def _read_json(path):
+    """JSONファイルを読み、欠落/壊れていれば空dictを返す。"""
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def _pid_alive(pid):
     """プロセスが生存しているか（POSIX）。"""
     if not pid:
@@ -1183,16 +1191,23 @@ def api_royale_refresh():
     metas = list_user_agents()
     if len(metas) < 2:
         return _selection_error("ランキング更新には登録AIが2体以上必要です。")
-    # 既存ジョブが稼働中なら二重起動を拒否（同一ファイルへの並行書き込み防止）。
     meta_p = ROYALE_DIR / "_refresh.meta"
-    if meta_p.exists():
-        try:
-            prev = json.loads(meta_p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            prev = {}
-        if _pid_alive(prev.get("pid")):
+    prog_p = ROYALE_DIR / "_refresh.progress"
+    # 既存ジョブが「本当に稼働中」なら二重起動を拒否（同一ファイルへの並行書き込み防止）。
+    # 完了済みPIDがゾンビとして生存判定されても次回更新を塞がないよう、progress が
+    # done>=total（完了）なら稼働中とみなさない。
+    if meta_p.exists() and _pid_alive(_read_json(meta_p).get("pid")):
+        prog = _read_json(prog_p)
+        done, total = prog.get("done", 0), prog.get("total", 0)
+        if not (total > 0 and done >= total):
             return jsonify({"error": "ランキング更新は既に実行中です。"}), 409
     ROYALE_DIR.mkdir(parents=True, exist_ok=True)
+    # 前回の進捗(done==total)を新ジョブの完了と誤判定しないよう初期化する。
+    # 子プロセスが total を確定し progress を書き直すまでの窓を塞ぐ。
+    try:
+        prog_p.unlink()
+    except FileNotFoundError:
+        pass
     job_id = uuid.uuid4().hex[:12]
     workers = max(1, (os.cpu_count() or 2) - 1)
     cmd = [sys.executable, "tools/run_tournament.py",
@@ -1214,21 +1229,8 @@ def api_royale_refresh():
 @app.route("/api/royale/refresh", methods=["GET"])
 def api_royale_refresh_status():
     """ランキング更新ジョブの進捗（稼働中か・done/total）を返す。"""
-    running = False
-    meta_p = ROYALE_DIR / "_refresh.meta"
-    if meta_p.exists():
-        try:
-            running = _pid_alive(json.loads(
-                meta_p.read_text(encoding="utf-8")).get("pid"))
-        except (OSError, ValueError):
-            pass
-    prog = {"done": 0, "total": 0}
-    prog_p = ROYALE_DIR / "_refresh.progress"
-    if prog_p.exists():
-        try:
-            prog = json.loads(prog_p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            pass
+    running = _pid_alive(_read_json(ROYALE_DIR / "_refresh.meta").get("pid"))
+    prog = _read_json(ROYALE_DIR / "_refresh.progress")
     done, total = prog.get("done", 0), prog.get("total", 0)
     # 全試合消化済みなら完了扱い。子プロセスを wait() していないため終了直後は
     # ゾンビが kill(pid,0) で生存判定されうるが、done>=total を優先して稼働中を打ち消す。

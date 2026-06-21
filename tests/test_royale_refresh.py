@@ -65,6 +65,31 @@ class RoyaleRefreshTests(unittest.TestCase):
         self.assertIn("error", r.get_json())
         popen.assert_not_called()
 
+    def test_refresh_allows_when_prev_pid_lingers_but_completed(self):
+        # 完了済み(done>=total)なら、PIDがゾンビとして生存判定されても409にせず起動する。
+        self._write_meta(os.getpid())          # まだ生存判定されるPID
+        self._write_progress(10, 10)           # ただし前回ジョブは完了済み
+        with mock.patch.object(server, "list_user_agents", return_value=self._agents(2)), \
+                mock.patch.object(server.subprocess, "Popen") as popen:
+            popen.return_value.pid = 2_000_000_000
+            r = self.client.post("/api/royale/refresh", json={})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("job_id", r.get_json())
+        popen.assert_called_once()
+
+    def test_refresh_resets_stale_progress_so_status_not_falsely_complete(self):
+        # 新ジョブ開始時に前回の done==total を消し、即時GETで誤完了表示しない。
+        self._write_progress(10, 10)           # 前回の完了進捗が残っている
+        with mock.patch.object(server, "list_user_agents", return_value=self._agents(2)), \
+                mock.patch.object(server.subprocess, "Popen") as popen:
+            popen.return_value.pid = 2_000_000_000
+            r = self.client.post("/api/royale/refresh", json={})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse((self.royale_dir / "_refresh.progress").exists())
+        # 子プロセス(モック)が未起動でも、完了とは判定されないこと。
+        j = self.client.get("/api/royale/refresh").get_json()
+        self.assertFalse(j["complete"])
+
     # --- 指摘1/3: ステータス running / complete / failed ---
     def test_status_running_when_pid_alive_and_unfinished(self):
         self._write_meta(os.getpid())
