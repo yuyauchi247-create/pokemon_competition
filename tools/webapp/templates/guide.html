@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}使い方ガイド | ポケカ 対戦アプリ{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/'">ホームへ</button>
+{% endblock %}
+
+{% block head %}
+<style>
+  .gd{max-width:880px;margin:0 auto;}
+  .gd h2.t{font-size:24px;margin:6px 0 4px;}
+  .gd .lead{color:var(--sub);margin-bottom:18px;line-height:1.8;}
+  .gd section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:14px 0;box-shadow:0 3px 14px #0b346b0a;}
+  .gd h3{font-size:17px;color:var(--teal);margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+  .gd p{line-height:1.85;color:var(--ink);margin:6px 0;}
+  .gd ul{line-height:1.9;padding-left:22px;margin:6px 0;}
+  .gd .steps{counter-reset:st;list-style:none;padding:0;}
+  .gd .steps li{position:relative;padding:10px 0 10px 46px;border-bottom:1px dashed var(--line);}
+  .gd .steps li:last-child{border-bottom:none;}
+  .gd .steps li::before{counter-increment:st;content:counter(st);position:absolute;left:0;top:9px;
+    width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;font-weight:900;display:flex;align-items:center;justify-content:center;}
+  .gd .steps b{color:var(--ink);}
+  .gd a.btn{display:inline-block;margin:4px 6px 4px 0;padding:7px 14px;border-radius:10px;background:var(--blue);color:#fff;font-weight:800;font-size:13px;text-decoration:none;}
+  .gd a.btn.g{background:#eef2f7;color:#46566b;}
+  .gd .feat{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;}
+  .gd .feat .f{border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+  .gd .feat .f .ic{font-size:22px;}
+  .gd .feat .f b{display:block;margin:4px 0 2px;}
+  .gd .feat .f small{color:var(--sub);line-height:1.7;display:block;}
+  .gd .tip{background:#eef7ff;border-left:4px solid var(--blue);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:14px;}
+  .gd .kbd{background:#eef2f7;border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-weight:800;font-size:13px;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page gd">
+  <div class="crumb"><a href="/">ホーム</a> › 使い方ガイド</div>
+  <h2 class="t">使い方ガイド 📖</h2>
+  <p class="lead">このサイトは「ポケモンカードを戦うAIエージェント」を作って、対戦・検証するためのツールです。<br>
+  はじめての方は、まずこのページを読めば、迷わず一通り操作できるようになります。</p>
+
+  <section>
+    <h3>🎯 このサイトでできること</h3>
+    <p>大きく分けて「<b>デッキを作る</b> → <b>AI（エージェント）を用意する</b> → <b>対戦・評価する</b>」の3つです。
+    対戦はあなたが手で操作することも、AI同士を観戦することもできます。</p>
+    <div class="feat">
+      <div class="f"><div class="ic">🃏</div><b>デッキ作成</b><small>60枚のデッキを組む・一覧で確認・複製・編集。</small></div>
+      <div class="f"><div class="ic">🤖</div><b>AIエージェント登録</b><small>対戦を動かすAI（.py / .ipynb）を登録・管理。</small></div>
+      <div class="f"><div class="ic">⚔️</div><b>対戦</b><small>あなた vs AI／AI vs AI（観戦）／人 vs 人。</small></div>
+      <div class="f"><div class="ic">📊</div><b>個別AI評価</b><small>1体のAIを他の全AIと戦わせ勝率を測定。</small></div>
+      <div class="f"><div class="ic">🎬</div><b>対戦ログ（リプレイ）</b><small>過去の対戦を盤面で再生して確認。</small></div>
+    </div>
+  </section>
+
+  <section>
+    <h3>🚀 まずはこの流れ（はじめての対戦まで）</h3>
+    <ul class="steps">
+      <li><b>デッキを用意する</b><br>「デッキ作成」を開き、登録済みのデッキを使うか、「＋ 新しいデッキを作成」で60枚を組みます。<br><a class="btn" href="/decks">デッキ作成へ</a></li>
+      <li><b>相手にするAIを確認する</b><br>「AIエージェント登録」で、対戦相手や評価に使えるAIの一覧を確認できます（追加も可能）。<br><a class="btn g" href="/agents">AIエージェント登録へ</a></li>
+      <li><b>対戦を始める</b><br>「対戦」→「あなた vs AI」を選び、自分のデッキと相手AIを選んで開始します。<br><a class="btn" href="/play">対戦へ</a></li>
+      <li><b>結果を見る・振り返る</b><br>対戦が終わったら「対戦ログ（リプレイ）」で盤面を再生できます。AIの強さは「個別AI評価」で数値化できます。<br><a class="btn g" href="/replay">リプレイ</a> <a class="btn g" href="/evaluate">個別AI評価</a></li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>🎮 対戦画面の操作（あなた vs AI）</h3>
+    <p>あなたの番になると、画面下に<b>「あなたの番です」</b>と、何をすべきか（例：「ベンチに出すポケモンを選んでください」）が表示されます。操作は基本これだけ：</p>
+    <ul>
+      <li><b>カードを選ぶ</b>：光っている自分の手札／場のカード、または表示された<b>カードをクリック</b>します。クリックすると<b>カードの詳細</b>と、できる操作（出す／エネルギーをつける／進化 等）が出ます。</li>
+      <li><b>ワザで攻撃する</b>：自分のバトル場のポケモンをクリック → 使えるワザを選びます。</li>
+      <li><b>複数選ぶとき</b>：必要な枚数を選んでから <span class="kbd">決定</span> ボタンを押します（例：<span class="kbd">決定 (2/2)</span>）。</li>
+      <li><b>相手のカード</b>をクリックすると、その詳細を確認できます。</li>
+    </ul>
+    <div class="tip">💡 相手（AI）の番は、1手ずつ自動で進みます。動きが見やすいよう少し間隔を空けて再生されます（速度はコントロールで変更可）。</div>
+    <div class="tip">💡 対戦の途中でブラウザを閉じても、<b>同じURLをもう一度開けば続きから再開</b>できます（サーバーが起動している間）。</div>
+  </section>
+
+  <section>
+    <h3>🧪 AIの強さを測る（個別AI評価）</h3>
+    <p>「個別AI評価」では、評価したいAIをカードから1体選ぶと、<b>他の全AIと先攻/後攻で対戦</b>し、対フィールド勝率と相手別の得意/苦手を出します。進捗はプログレスバーで表示されます。総当たりより速く・軽く確認できます。</p>
+    <a class="btn" href="/evaluate">個別AI評価へ</a>
+  </section>
+
+  <section>
+    <h3>❓ よくある疑問</h3>
+    <ul>
+      <li><b>デッキはどこから選ぶ？</b> … 対戦設定や参加画面で「保存済みデッキ」「登録AIのデッキ」から選びます。</li>
+      <li><b>AIはどう用意する？</b> … 「AIエージェント登録」で .py / .ipynb を登録します。登録済みのAIはそのまま対戦・評価に使えます。</li>
+      <li><b>対戦を振り返りたい</b> … 「対戦ログ（リプレイ）」で過去の対戦を盤面再生できます。</li>
+      <li><b>途中で閉じてしまった</b> … 同じ対戦URLを開き直せば続きから再開できます。</li>
+    </ul>
+  </section>
+
+  <section style="text-align:center">
+    <h3 style="justify-content:center">準備ができたら</h3>
+    <a class="btn" href="/play">⚔️ 対戦をはじめる</a>
+    <a class="btn g" href="/decks">🃏 デッキを作る</a>
+    <a class="btn g" href="/">🏠 ホームへ</a>
+  </section>
+</div>
+{% endblock %}

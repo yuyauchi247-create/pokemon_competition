@@ -58,6 +58,13 @@
   .handlabel{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:8px;}
   .handlabel.oppHandLabel{margin-top:12px;}
   #ask{margin-top:12px;}
+  .opts{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;}
+  .optcard{cursor:pointer;border-radius:10px;border:2px solid transparent;transition:transform .1s,box-shadow .1s;position:relative;}
+  .optcard:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(11,52,107,.2);}
+  .optcard.selp{border-color:#1565d8;box-shadow:0 0 0 3px rgba(21,101,216,.3);}
+  .optcard .pcard,.optcard .pcard.imgcard{width:92px;}
+  .optcard .backimg{width:92px;height:128px;border-radius:8px;display:block;box-shadow:0 2px 8px #0b346b40;}
+  .optcard .baklbl{position:absolute;bottom:5px;left:0;right:0;text-align:center;font-size:11px;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;}
   .aiControls{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:14px;padding:14px;
     display:flex;align-items:center;gap:18px;flex-wrap:wrap;box-shadow:0 4px 18px #0b346b0a;}
   .aiControls .speed{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--sub);font-weight:700;}
@@ -112,7 +119,7 @@ const TOKEN=localStorage.getItem('pvp_token_'+GID)||'';
 function qs(){return '?gid='+encodeURIComponent(GID)+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');}
 let lastVer=-1, pvpTimer=null;
 const ENE_ICON={GRASS:'🍃',FIRE:'🔥',WATER:'💧',LIGHTNING:'⚡',PSYCHIC:'🔮',FIGHTING:'👊',DARKNESS:'🌙',METAL:'⚙️',DRAGON:'🐉',COLORLESS:'⭐',RAINBOW:'🌈',TEAM_ROCKET:'🚀'};
-const HAND=2, ACTIVE=4, BENCH=5;
+const HAND=2, ACTIVE=4, BENCH=5, PRIZE=6;
 const CTX={
   0:'行動を選んでください（手札を場へドラッグ／カードをクリック）',
   1:'バトル場に出すたねポケモンを選んでください',
@@ -345,11 +352,28 @@ function renderAsk(){
   if(!single)h+=`<div style="margin-top:10px"><button id="confirm">決定 (0/${s.maxCount})</button></div>`;
   ask.innerHTML=h;
   const opts=document.getElementById('opts');
+  const pick=(o)=>{ if(single)submit([o.index]); else chooseCard(o.index); };
   if(opts)btnOpts.forEach(o=>{
-    const el=document.createElement('div'); el.className='opt';
-    el.textContent=optLabel(o,s.context);
-    el.onclick=()=>{ if(single)submit([o.index]); else chooseCard(o.index); };
-    opts.appendChild(el);
+    const faceDown=(o.area===PRIZE);                 // サイドは中身を見せない＝裏面
+    const hasImg=!faceDown && o.card && o.card.img;  // 中身が見えるカード選択肢＝表面画像
+    if(faceDown || hasImg){
+      const wrap=document.createElement('div');
+      wrap.className='optcard'+(picks.includes(o.index)?' selp':'');
+      wrap.dataset.oi=o.index;
+      if(faceDown){
+        wrap.innerHTML=`<img class="backimg" src="/card_back" alt="裏向きのカード"><div class="baklbl">サイド</div>`;
+        wrap.onclick=()=>pick(o);                    // 面伏せは中身不明→クリックで選択
+      }else{
+        wrap.innerHTML=tile(o.card,{});
+        wrap.onclick=()=>openCard(o.card.id,[{label:single?'このカードを選ぶ':(picks.includes(o.index)?'選択を外す':'このカードを選ぶ'),onclick:()=>pick(o)}]);
+      }
+      opts.appendChild(wrap);
+    }else{
+      const el=document.createElement('div'); el.className='opt';
+      el.textContent=optLabel(o,s.context);
+      el.onclick=()=>pick(o);
+      opts.appendChild(el);
+    }
   });
   const cb=document.getElementById('confirm');
   if(cb)cb.onclick=()=>{if(picks.length<s.minCount){alert(`${s.minCount}個以上選んでください`);return;}submit(picks);};
@@ -366,6 +390,7 @@ function chooseCard(index){
   if(picks.includes(index)){ picks=picks.filter(x=>x!==index); }
   else{ if(picks.length>=s.maxCount)return; picks.push(index); }
   renderBoard(); updateConfirm();
+  document.querySelectorAll('#opts .optcard').forEach(el=>el.classList.toggle('selp', picks.includes(+el.dataset.oi)));
 }
 function renderBanner(){
   const b=document.getElementById('banner');

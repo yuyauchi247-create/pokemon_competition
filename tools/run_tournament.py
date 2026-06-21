@@ -39,18 +39,52 @@ from cg.api import SelectContext  # noqa: E402
 # 親でロードしたAI。fork 後は各ワーカーが自分のコピーを持つ（読み取りのみ）。
 AGENTS = []          # [{agent, deck, name, id}, ...]
 MATCH_TIMEOUT = 120  # 1試合の上限秒（暴走AIが全体を止めるのを防ぐ）
+LOG_DIR = None       # 設定時、各試合の全行動ログ(対戦と同じ形式)をここに保存
+LOG_FRAMES = False   # 盤面スナップショット(frames)も保存するか（重いので既定OFF）
 
 
-def _run_match_with_deadline(p0, p1, seed, deadline_s):
+def _save_eval_log(g, tag):
+    """1試合の行動ログを、対戦(_save_match_log)と同じ形式で LOG_DIR に保存する。"""
+    if not LOG_DIR:
+        return
+    try:
+        d = Path(LOG_DIR)
+        d.mkdir(parents=True, exist_ok=True)
+        result = g.get("result", -1)
+        p0 = g.get("player_label", "P1")
+        p1 = g.get("opponent_label", "P2")
+        winner = {0: p0, 1: p1}.get(result, "引き分け/未確定")
+        data = {
+            "mode": "eval", "tag": tag,
+            "player0": p0, "player1": p1,
+            "result": result, "winner": winner,
+            "log": g.get("log", []),
+            "frames": g.get("frames", []),
+        }
+        (d / f"{tag}.json").write_text(
+            json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _run_match_with_deadline(p0, p1, seed, deadline_s, tag=None):
     """_run_headless_match と同じだが、1試合に時間上限を付ける。
 
     上限超過は引き分け(-1)扱い。勝者index 0/1、引き分け -1 を返す。
+    LOG_DIR が設定され tag が与えられた場合は、各手の全行動ログ（対戦と同じ
+    translate_logs 形式）を蓄積し、試合終了時に _save_eval_log で保存する。
     """
     rng = random.Random(seed)
     obs, start = battle_start(p0["deck"], p1["deck"])
     if obs is None:
         return -1
     set_active_battle(start.battlePtr)
+    logging_on = bool(LOG_DIR) and tag is not None
+    g = None
+    if logging_on:
+        g = {"obs": obs, "events": [], "log": [], "frames": [], "hand_cache": {},
+             "player_label": p0.get("name", "P1"),
+             "opponent_label": p1.get("name", "P2"), "result": -1}
     result = -1
     t_end = time.time() + deadline_s
     try:
@@ -72,11 +106,19 @@ def _run_match_with_deadline(p0, p1, seed, deadline_s):
             else:
                 picks = S._headless_pick(p0 if you == 0 else p1, sel, obs, rng)
             obs = battle_select(picks)
+            if logging_on:
+                g["obs"] = obs
+                S._collect_events(g, obs)       # 対戦と同じ全行動イベントを蓄積
+                if LOG_FRAMES:
+                    S._capture_frame(g)
     finally:
         try:
             battle_finish()
         except Exception:
             pass
+    if logging_on:
+        g["result"] = result
+        _save_eval_log(g, tag)
     return result
 
 
@@ -104,14 +146,16 @@ def _write_progress(path, done, total):
 
 
 def _run_task(task):
-    """ワーカー: (i, j) の1試合を実行して (i, j, result) を返す。
+    """ワーカー: 1試合を実行して (i, j, result) を返す。
 
-    g は同一ペアの何試合目か（seed を変えるためだけに使う）。
+    task = (i, j, g, seed)。seed は呼び出し側が決める（挑戦者比較では挑戦者の
+    indexに依存させず、相手＋手番＋試合番号だけで決める＝ペア比較でノイズ低減）。
     """
-    i, j, g = task
+    i, j, g, seed = task
+    tag = f"{i:03d}_{j:03d}_g{g}" if LOG_DIR else None
     res = _run_match_with_deadline(
-        AGENTS[i], AGENTS[j], seed=(i * 100003 + j * 97 + g),
-        deadline_s=MATCH_TIMEOUT)
+        AGENTS[i], AGENTS[j], seed=seed,
+        deadline_s=MATCH_TIMEOUT, tag=tag)
     return (i, j, res)
 
 
@@ -201,13 +245,20 @@ def main():
                     help="1コアで順次実行（並列結果との照合用）")
     ap.add_argument("--progress-file", default="",
                     help="進捗(JSON: {done,total})を書き出すファイル（UIのバー用）")
+    ap.add_argument("--log-dir", default="",
+                    help="設定すると各試合の全行動ログ(対戦と同じ形式)をこのフォルダに保存")
+    ap.add_argument("--log-frames", action="store_true",
+                    help="盤面スナップショット(frames)も保存（重い。既定は行動ログのみ）")
     ap.add_argument("--out", default=str(ROOT / "data" / "tournament_result.json"))
     args = ap.parse_args()
 
-    global MATCH_TIMEOUT
+    global MATCH_TIMEOUT, LOG_DIR, LOG_FRAMES
     MATCH_TIMEOUT = args.timeout
+    LOG_DIR = args.log_dir or None
+    LOG_FRAMES = bool(args.log_frames)
 
     metas = S.list_user_agents()
+    metas = sorted(metas, key=lambda m: m["id"])  # index/シードを実行間で固定（再現性）
     if args.indices:
         idx = [int(x) for x in args.indices.split(",") if x.strip() != ""]
         metas = [metas[i] for i in idx]
@@ -225,6 +276,17 @@ def main():
     n = len(AGENTS)
     print(f"loaded {n} agents in {time.time() - t0:.1f}s", flush=True)
 
+    if LOG_DIR:
+        # ログのファイル名(index)を名前/IDに対応付けるための索引を書き出す。
+        try:
+            d = Path(LOG_DIR)
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "_agents.json").write_text(json.dumps(
+                {i: {"id": a["id"], "name": a["name"]} for i, a in enumerate(AGENTS)},
+                ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
     g_per = max(1, args.games_per_pair)
     challenger = _resolve_challenger(args.challenger)
     if args.challenger and challenger is None:
@@ -232,12 +294,20 @@ def main():
         return
     if challenger is not None:
         # 個別評価: 挑戦者を含む対戦だけ（home/away × g_per）。O(N)。
+        # seed は相手(j)＋手番＋試合番号だけで決め、挑戦者のindexに依存させない。
+        # → 別の挑戦者でも各相手に対し同一シャッフルで戦う＝ペア比較でノイズ低減。
         c = challenger
-        tasks = [(p0, p1, g) for j in range(n) if j != c
-                 for (p0, p1) in ((c, j), (j, c)) for g in range(g_per)]
+        tasks = []
+        for j in range(n):
+            if j == c:
+                continue
+            for g in range(g_per):
+                tasks.append((c, j, g, j * 100003 + g))           # 挑戦者が先攻(player0)
+                tasks.append((j, c, g, j * 100003 + 50000 + g))   # 挑戦者が後攻(player1)
         print(f"challenger 評価: {AGENTS[c]['name']} vs {n - 1}体", flush=True)
     else:
-        tasks = [(i, j, g) for i in range(n) for j in range(n) if i != j
+        tasks = [(i, j, g, i * 100003 + j * 97 + g)
+                 for i in range(n) for j in range(n) if i != j
                  for g in range(g_per)]
     workers = 1 if args.sequential else args.workers
     print(f"{len(tasks)} matches ({g_per}/pair), workers={workers}, "

@@ -732,6 +732,11 @@ def play():
     return render_template("play.html")
 
 
+@app.route("/guide")
+def guide():
+    return render_template("guide.html")
+
+
 @app.route("/setup")
 def setup():
     mode = request.args.get("mode")
@@ -798,11 +803,14 @@ def api_evaluate_start():
     job_id = uuid.uuid4().hex[:12]
     jobfile = EVAL_JOBS_DIR / f"{job_id}.json"
     workers = max(1, os.cpu_count() or 2)
+    # 各試合の全行動ログ（対戦と同じ形式）を data/logs/eval/<job_id>/ に保存する。
+    eval_log_dir = LOGS_DIR / "eval" / job_id
     cmd = [sys.executable, "tools/run_tournament.py",
            "--challenger", aid,
            "--games-per-pair", str(EVAL_GAMES_PER_PAIR),
            "--workers", str(workers),
            "--progress-file", str(EVAL_JOBS_DIR / f"{job_id}.progress"),
+           "--log-dir", str(eval_log_dir),
            "--out", str(jobfile)]
     proc = subprocess.Popen(
         cmd, cwd=str(APP_ROOT),
@@ -812,6 +820,7 @@ def api_evaluate_start():
         "agent_id": aid, "name": m["name"], "pid": proc.pid,
         "opponents": len(metas) - 1,
         "games_per_pair": EVAL_GAMES_PER_PAIR,
+        "log_dir": str(eval_log_dir),
         "started_at": datetime.now(timezone.utc).isoformat(),
     }), encoding="utf-8")
     return jsonify({"job_id": job_id, "name": m["name"],
@@ -1095,6 +1104,12 @@ def card_img(cid):
     if not fn:
         abort(404)
     return send_from_directory(CARD_IMAGES_DIR, fn, max_age=86400)
+
+
+@app.route("/card_back", methods=["GET"])
+def card_back():
+    """カード裏面画像（面伏せ＝サイド/相手手札/山札の選択表示用）。"""
+    return send_from_directory(CARD_IMAGES_DIR, "_back.png", max_age=86400)
 
 
 NO_GAME = {"board": None, "select": None, "result": -1, "running": False,
