@@ -1183,6 +1183,15 @@ def api_royale_refresh():
     metas = list_user_agents()
     if len(metas) < 2:
         return _selection_error("ランキング更新には登録AIが2体以上必要です。")
+    # 既存ジョブが稼働中なら二重起動を拒否（同一ファイルへの並行書き込み防止）。
+    meta_p = ROYALE_DIR / "_refresh.meta"
+    if meta_p.exists():
+        try:
+            prev = json.loads(meta_p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            prev = {}
+        if _pid_alive(prev.get("pid")):
+            return jsonify({"error": "ランキング更新は既に実行中です。"}), 409
     ROYALE_DIR.mkdir(parents=True, exist_ok=True)
     job_id = uuid.uuid4().hex[:12]
     workers = max(1, (os.cpu_count() or 2) - 1)
@@ -1221,8 +1230,13 @@ def api_royale_refresh_status():
         except (OSError, ValueError):
             pass
     done, total = prog.get("done", 0), prog.get("total", 0)
+    # 全試合消化済みなら完了扱い。子プロセスを wait() していないため終了直後は
+    # ゾンビが kill(pid,0) で生存判定されうるが、done>=total を優先して稼働中を打ち消す。
+    complete = total > 0 and done >= total
+    if complete:
+        running = False
     return jsonify({"running": running, "done": done, "total": total,
-                    "complete": (not running) and total > 0 and done >= total})
+                    "complete": complete})
 
 
 def _royale_hof_load():

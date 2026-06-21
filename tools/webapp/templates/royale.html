@@ -256,8 +256,13 @@ async function pollRefresh(){
       ss.textContent=`ランキング更新中… ${s.done}/${s.total||'?'} 試合`;
       refreshTimer=setTimeout(pollRefresh,2000);
     }else{
-      ss.textContent='ランキングを更新しました。';
       document.getElementById('refreshBtn').disabled=false;
+      if(!s.complete){
+        // 全試合を消化せず停止＝異常終了。古いランキングを成功扱いにしない。
+        ss.textContent='ランキング更新に失敗しました。もう一度お試しください。';
+        return;
+      }
+      ss.textContent='ランキングを更新しました。';
       // ラダー再読み込み
       const rank=await get('/api/royale/ranking');
       LADDER=rank.ladder||[]; STEPS=LADDER.slice().reverse();
