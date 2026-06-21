@@ -54,6 +54,11 @@ ALLOW_AGENT_UPLOAD = os.environ.get("POKECA_ALLOW_AGENT_UPLOAD", "1") != "0"
 # 対戦ログの保存先（対戦ごとに1ファイル）。
 LOGS_DIR = Path(__file__).resolve().parents[2] / "data" / "logs"
 
+# バトルロワイヤル: ランキング/殿堂入りの保存先（logs はマウント済みで再ビルド後も残る）。
+ROYALE_DIR = LOGS_DIR / "royale"
+ROYALE_RANKING_FILE = ROYALE_DIR / "ranking.json"
+ROYALE_HOF_FILE = ROYALE_DIR / "hof.json"
+
 # 個別AI評価（challenger）のジョブ置き場と実行スクリプト。
 APP_ROOT = Path(__file__).resolve().parents[2]
 EVAL_JOBS_DIR = Path(tempfile.gettempdir()) / "pokeca_eval_jobs"
@@ -533,12 +538,12 @@ def _advance_until_human(g):
     _prev = [0]
 
     def _snap():
+        # obs.logs は「直前のselect以降の差分」なので、この1手ぶんの全イベントをそのまま使う。
+        # （以前は累積前提で allev[_prev:] を取っており、AIターン再生でイベントが欠落/ズレていた）
         try:
-            allev = translate_logs(to_observation_class(g["obs"]), HUMAN)
+            newev = translate_logs(to_observation_class(g["obs"]), HUMAN)
         except Exception:
-            allev = []
-        newev = allev[_prev[0]:]
-        _prev[0] = len(allev)
+            newev = []
         try:
             board = _frame_board(g)
         except Exception:
@@ -735,6 +740,11 @@ def play():
 @app.route("/guide")
 def guide():
     return render_template("guide.html")
+
+
+@app.route("/royale")
+def royale():
+    return render_template("royale.html")
 
 
 @app.route("/setup")
@@ -1110,6 +1120,69 @@ def card_img(cid):
 def card_back():
     """カード裏面画像（面伏せ＝サイド/相手手札/山札の選択表示用）。"""
     return send_from_directory(CARD_IMAGES_DIR, "_back.png", max_age=86400)
+
+
+# ---------- バトルロワイヤル ----------
+def _royale_ladder():
+    """保存済み総当たり結果から、現存する登録AIのTOP5を強い順で返す。
+
+    挑戦は弱い相手(5位)→強い相手(1位)の順なので、フロント側で並びを反転して使う。
+    既に削除されたAIは除外し、現存分の上位5体を採用する。
+    """
+    try:
+        data = json.loads(ROYALE_RANKING_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    valid = {a["id"] for a in list_user_agents()}
+    standings = [s for s in data.get("standings", [])
+                 if s.get("id") in valid]
+    ladder = []
+    for rank, s in enumerate(standings[:5], 1):  # 1 が最強
+        ladder.append({
+            "id": s["id"], "name": s["name"], "rank": rank,
+            "winRate": s.get("winRate"), "wins": s.get("wins"),
+            "losses": s.get("losses"), "draws": s.get("draws"),
+        })
+    return ladder
+
+
+@app.route("/api/royale/ranking", methods=["GET"])
+def api_royale_ranking():
+    """バトルロワイヤルの相手ラダー（現存TOP5）を返す。"""
+    return jsonify({"ladder": _royale_ladder()})
+
+
+def _royale_hof_load():
+    try:
+        entries = json.loads(ROYALE_HOF_FILE.read_text(encoding="utf-8"))
+        return entries if isinstance(entries, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+@app.route("/api/royale/hof", methods=["GET"])
+def api_royale_hof_list():
+    """殿堂入りリストを返す（新しい順）。"""
+    return jsonify({"entries": _royale_hof_load()})
+
+
+@app.route("/api/royale/hof", methods=["POST"])
+def api_royale_hof_add():
+    """全勝ち抜き者を殿堂入りに登録する（クライアント申告制）。"""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()[:24]
+    if not name:
+        return jsonify({"error": "名前を入力してください。"}), 400
+    ROYALE_DIR.mkdir(parents=True, exist_ok=True)
+    entries = _royale_hof_load()
+    entries.insert(0, {
+        "name": name,
+        "at": datetime.now(timezone.utc).isoformat(),
+    })
+    entries = entries[:200]
+    ROYALE_HOF_FILE.write_text(
+        json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+    return jsonify({"ok": True, "entries": entries})
 
 
 NO_GAME = {"board": None, "select": None, "result": -1, "running": False,

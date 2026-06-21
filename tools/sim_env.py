@@ -233,16 +233,28 @@ def translate_logs(ob, human_index=0):
         w = who(pi)
         nm = (card_name(lg.cardId) if getattr(lg, "cardId", None) else "")
         txt = None
+        kind = None  # 連続ドロー集約用の内部タグ（"drawn"=名前公開, "drawh"=伏せ）
+        dnm = None
         if t == LogType.TURN_START:
             txt = f"―― {label(pi)}のターン ――"
+        elif t == LogType.HAS_BASIC_POKEMON:
+            # 最初の手札にたねポケモンが無いと引き直し（マリガン）。
+            # 開始時に「引いた」が大量に並ぶのはこの引き直しが理由なので明示する。
+            if getattr(lg, "hasBasicPokemon", None) is False:
+                txt = (f"↻ {label(pi)}は最初の手札にたねポケモンが無く、"
+                       f"手札を引き直し（マリガン）")
+            # たねポケモンがある場合は通知不要（ノイズ削減のため出さない）
         elif t == LogType.DRAW:
             # 相手が引いたカード名は隠れ情報なので伏せる（自分の引きのみ公開）
             if w == "you" and nm:
                 txt = f"あなたが「{nm}」を引いた"
+                kind, dnm = "drawn", nm
             else:
                 txt = f"{label(pi)}がカードを引いた"
+                kind = "drawh"
         elif t == LogType.DRAW_REVERSE:
             txt = f"{label(pi)}がカードを引いた"
+            kind = "drawh"
         elif t == LogType.PLAY:
             txt = f"{label(pi)}が「{nm}」を出した／使った"
         elif t == LogType.ATTACH:
@@ -252,7 +264,8 @@ def translate_logs(ob, human_index=0):
             tgt = card_name(lg.cardIdTarget) if getattr(lg, "cardIdTarget", None) else ""
             txt = f"{label(pi)}が{('「'+tgt+'」を') if tgt else ''}「{nm}」に進化させた"
         elif t in (LogType.SWITCH, LogType.CHANGE):
-            txt = f"{label(pi)}がポケモンを入れ替えた"
+            # 自分の意思か相手の効果(ハリテヤマ等)かに関わらず誤解を避け、受動形で「誰の」を明示する
+            txt = f"{label(pi)}のバトルポケモンが入れ替わった"
         elif t == LogType.ATTACK:
             txt = f"{label(pi)}の「{nm}」のワザ！"
         elif t == LogType.HP_CHANGE:
@@ -275,8 +288,45 @@ def translate_logs(ob, human_index=0):
                       4: "カードの効果"}.get(getattr(lg, "reason", 0), "")
             txt = f"決着（{reason}）" if reason else "決着"
         if txt:
-            events.append({"who": w, "text": txt})
-    return events
+            events.append({"who": w, "text": txt, "_k": kind, "_nm": dnm})
+    return _compress_draws(events)
+
+
+def _compress_draws(events):
+    """連続するドローを1行に集約してログのノイズを抑える。
+
+    - 伏せドロー（相手/自分の非公開）は2枚以上で「○○がカードをN枚引いた」。
+    - 自分の名前公開ドローは4枚以上（=開始手札やドローサポートのまとめ引き）で
+      「あなたがN枚引いた（A、B、…）」。通常の1〜3枚は元の1行ずつのまま。
+    内部タグ(_k/_nm)は除去して {who,text} のみ返す。
+    """
+    out = []
+    i, n = 0, len(events)
+    while i < n:
+        e = events[i]
+        k = e.get("_k")
+        if k in ("drawn", "drawh"):
+            j = i
+            while (j < n and events[j].get("_k") == k
+                   and events[j]["who"] == e["who"]):
+                j += 1
+            grp = events[i:j]
+            cnt = len(grp)
+            lab = "あなた" if e["who"] == "you" else "相手"
+            if k == "drawh" and cnt >= 2:
+                out.append({"who": e["who"],
+                            "text": f"{lab}がカードを{cnt}枚引いた"})
+            elif k == "drawn" and cnt >= 4:
+                names = "、".join(g.get("_nm") or "" for g in grp)
+                out.append({"who": e["who"],
+                            "text": f"{lab}が{cnt}枚引いた（{names}）"})
+            else:
+                out.extend({"who": g["who"], "text": g["text"]} for g in grp)
+            i = j
+        else:
+            out.append({"who": e["who"], "text": e["text"]})
+            i += 1
+    return out
 
 
 def _attack_obj(aid):

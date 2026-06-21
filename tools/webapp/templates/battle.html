@@ -65,6 +65,51 @@
   .optcard .pcard,.optcard .pcard.imgcard{width:92px;}
   .optcard .backimg{width:92px;height:128px;border-radius:8px;display:block;box-shadow:0 2px 8px #0b346b40;}
   .optcard .baklbl{position:absolute;bottom:5px;left:0;right:0;text-align:center;font-size:11px;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;}
+  /* コイントス演出 */
+  .coinOverlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(10,30,60,.35);}
+  .coinOverlay.hidden{display:none;}
+  .coinStage{display:flex;flex-direction:column;align-items:center;gap:14px;perspective:600px;}
+  .coin{width:100px;height:100px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:900;color:#7a5a00;
+    background:radial-gradient(circle at 35% 30%,#fff0b0,#f4c026 60%,#b88a10);box-shadow:0 8px 24px rgba(0,0,0,.45),inset 0 0 0 5px rgba(255,255,255,.45);}
+  .coin.spinning{animation:coinSpin .22s linear infinite;}
+  @keyframes coinSpin{0%{transform:rotateX(0deg) scale(1);}50%{transform:rotateX(180deg) scale(1.12);}100%{transform:rotateX(360deg) scale(1);}}
+  .coin.heads{background:radial-gradient(circle at 35% 30%,#fff0b0,#f4c026 60%,#b88a10);}
+  .coin.tails{background:radial-gradient(circle at 35% 30%,#e3eaf3,#9fb2c8 60%,#6c8099);color:#33485f;}
+  .coinResult{font-size:22px;font-weight:900;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.55);}
+  /* きぜつ→トラッシュ 演出 */
+  .pcard.koanim{animation:koFall 1s ease-in forwards;position:relative;z-index:5;}
+  @keyframes koFall{0%{transform:none;filter:none;}18%{transform:translateY(-5px) rotate(-3deg);}
+    45%{filter:grayscale(.5) brightness(1.15);}100%{filter:grayscale(1) brightness(.65);opacity:0;transform:translateY(46px) rotate(9deg) scale(.82);}}
+  .kobadge{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#d12f3f;color:#fff;font-weight:900;font-size:12px;padding:3px 9px;border-radius:8px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.45);z-index:7;pointer-events:none;animation:koBadge 1s ease forwards;}
+  @keyframes koBadge{0%{opacity:0;transform:translate(-50%,-50%) scale(.5);}22%{opacity:1;transform:translate(-50%,-50%) scale(1.12);}80%{opacity:1;}100%{opacity:0;}}
+  /* ダメージ/攻撃 演出 */
+  .dmgpop{position:absolute;top:2px;left:50%;color:#fff;background:#d12f3f;font-weight:900;font-size:15px;padding:2px 9px;border-radius:9px;box-shadow:0 2px 8px rgba(0,0,0,.45);z-index:8;pointer-events:none;white-space:nowrap;animation:dmgRise 1.1s ease-out forwards;}
+  @keyframes dmgRise{0%{opacity:0;transform:translate(-50%,8px) scale(.7);}16%{opacity:1;transform:translate(-50%,-4px) scale(1.18);}70%{opacity:1;transform:translate(-50%,-20px) scale(1);}100%{opacity:0;transform:translate(-50%,-34px) scale(.95);}}
+  .pcard.hitflash{animation:hitFlash .5s ease;}
+  @keyframes hitFlash{0%,100%{filter:none;box-shadow:none;}28%{filter:brightness(1.55) saturate(1.4);box-shadow:0 0 0 3px rgba(209,47,63,.6);}55%{filter:brightness(.92);}}
+  .pcard.lungeUp{animation:lungeUp .42s ease;}
+  .pcard.lungeDown{animation:lungeDown .42s ease;}
+  @keyframes lungeUp{0%,100%{transform:translateY(0);}42%{transform:translateY(-16px) scale(1.08);}}
+  @keyframes lungeDown{0%,100%{transform:translateY(0);}42%{transform:translateY(16px) scale(1.08);}}
+  /* 対象カードの隣に「Nダメージ！」を大きく表示 */
+  .dmgcw{position:fixed;z-index:70;transform:translateY(-50%);pointer-events:none;}
+  .dmgcallout{font-weight:900;font-size:30px;line-height:1;color:#fff;background:linear-gradient(135deg,#ff5b5b,#d61f2f);
+    padding:7px 16px;border-radius:12px;border:3px solid #fff;box-shadow:0 6px 22px rgba(0,0,0,.45);white-space:nowrap;
+    text-shadow:0 2px 4px rgba(0,0,0,.45);transform-origin:center;animation:dmgCallout 1.3s cubic-bezier(.2,1.4,.4,1) forwards;}
+  @keyframes dmgCallout{0%{opacity:0;transform:scale(.3) rotate(-8deg);}18%{opacity:1;transform:scale(1.28) rotate(3deg);}
+    32%{transform:scale(1) rotate(0);}80%{opacity:1;}100%{opacity:0;transform:scale(1.06);}}
+  /* 効果/特性/入れ替えの告知トースト＋バトル場強調 */
+  .gtoast{position:fixed;top:72px;left:50%;z-index:66;background:rgba(18,38,68,.94);color:#fff;font-weight:800;font-size:16px;
+    padding:10px 20px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.25);
+    white-space:nowrap;pointer-events:none;max-width:90vw;overflow:hidden;text-overflow:ellipsis;animation:gtoast 1.2s ease forwards;}
+  @keyframes gtoast{0%{opacity:0;transform:translate(-50%,-12px) scale(.92);}14%{opacity:1;transform:translate(-50%,0) scale(1);}82%{opacity:1;}100%{opacity:0;transform:translate(-50%,-8px);}}
+  .pcard.actpulse{outline:3px solid #2bd07a;outline-offset:2px;border-radius:10px;animation:actPulse .9s ease 2;}
+  @keyframes actPulse{0%,100%{box-shadow:0 0 0 0 rgba(43,208,122,0);}50%{box-shadow:0 0 0 9px rgba(43,208,122,.5);}}
+  /* 対戦後の「もう一度対戦」 */
+  #banner .bmsg{font-size:1.05em;font-weight:900;}
+  #banner .bask{margin-top:6px;font-size:14px;font-weight:700;opacity:.9;}
+  #banner .bactions{margin-top:12px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  #banner .bactions button{font-size:14px;padding:9px 16px;}
   .aiControls{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:14px;padding:14px;
     display:flex;align-items:center;gap:18px;flex-wrap:wrap;box-shadow:0 4px 18px #0b346b0a;}
   .aiControls .speed{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--sub);font-weight:700;}
@@ -96,6 +141,9 @@
       <div class="zone-bench you" id="youBench"></div>
       <div class="zone-side" id="youPiles"></div>
     </section>
+    <div id="coinOverlay" class="coinOverlay hidden">
+      <div class="coinStage"><div id="coin" class="coin"></div><div id="coinResult" class="coinResult"></div></div>
+    </div>
     <div id="ask"></div>
     <div id="aiControls" class="aiControls hidden"></div>
     <div class="handzone">
@@ -116,6 +164,7 @@ let STATE=null, picks=[], dragHand=null, busy=false;
 let aiPlaying=false, aiDelay=700, aiTimer=null, speedMult=1;
 const GID=new URLSearchParams(location.search).get('gid')||'';
 const TOKEN=localStorage.getItem('pvp_token_'+GID)||'';
+const ROYALE=parseInt(new URLSearchParams(location.search).get('royale')||'',10); // バトルロワイヤルの第N戦（NaN=通常対戦）
 function qs(){return '?gid='+encodeURIComponent(GID)+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');}
 let lastVer=-1, pvpTimer=null;
 const ENE_ICON={GRASS:'🍃',FIRE:'🔥',WATER:'💧',LIGHTNING:'⚡',PSYCHIC:'🔮',FIGHTING:'👊',DARKNESS:'🌙',METAL:'⚙️',DRAGON:'🐉',COLORLESS:'⭐',RAINBOW:'🌈',TEAM_ROCKET:'🚀'};
@@ -397,15 +446,34 @@ function renderBanner(){
   if(STATE.result===-1){b.style.display='none';return;}
   b.style.display='block';
   const isAi=STATE.mode==='ai';
-  if(STATE.result===0){ // プレイヤー1（人間 or AI）の勝ち
-    b.className='win';
-    b.textContent=isAi?`🏆 ${STATE.youLabel||'プレイヤー1'} の勝ち！`:'🎉 あなたの勝ち！';
-  }else if(STATE.result===1){ // プレイヤー2（相手）の勝ち
-    b.className='lose';
-    b.textContent=isAi?`🏆 ${STATE.oppLabel||'プレイヤー2'} の勝ち！`:'AIの勝ち…';
-  }else{
-    b.className='draw';b.textContent='引き分け';
+  let msg,cls;
+  if(STATE.result===0){ cls='win'; msg=isAi?`🏆 ${STATE.youLabel||'プレイヤー1'} の勝ち！`:'🎉 あなたの勝ち！'; }
+  else if(STATE.result===1){ cls='lose'; msg=isAi?`🏆 ${STATE.oppLabel||'プレイヤー2'} の勝ち！`:'AIの勝ち…'; }
+  else { cls='draw'; msg='引き分け'; }
+  b.className=cls;
+  const mode=STATE.mode||'human';
+  // --- バトルロワイヤル: 勝敗に応じて専用の導線を出す ---
+  if(!isNaN(ROYALE)){
+    const won=(STATE.result===0);
+    const bmsg=won?'🏆 突破！ クリアしました！':(STATE.result===1?'敗北… もう一度挑戦しよう':'引き分け');
+    const back=won?('/royale?cleared='+ROYALE):'/royale';
+    b.className=won?'win':'lose';
+    b.innerHTML=`<div class="bmsg">${bmsg}</div>
+      <div class="bask">${won?'次の相手が待っています。':'同じ相手に何度でも再挑戦できます。'}</div>
+      <div class="bactions">
+        <button type="button" onclick="location.href='${back}'">${won?'👑 バトルロワイヤルへ戻る（次の相手へ）':'👑 バトルロワイヤルへ戻る（再挑戦）'}</button>
+        <button type="button" class="gray" onclick="location.href='/replay'">🎬 リプレイを見る</button>
+      </div>`;
+    return;
   }
+  const againHref = mode==='pvp' ? '/play' : ('/setup?mode='+mode);
+  b.innerHTML=`<div class="bmsg">${msg}</div>
+    <div class="bask">もう一度対戦しますか？</div>
+    <div class="bactions">
+      <button type="button" onclick="location.href='${againHref}'">🔄 もう一度対戦する</button>
+      ${mode!=='pvp'?`<button type="button" class="gray" onclick="location.href='/replay'">🎬 リプレイを見る</button>`:''}
+      <button type="button" class="gray" onclick="location.href='/'">🏠 ホームへ</button>
+    </div>`;
 }
 
 /* ---------- クリック→詳細＋操作モーダル ---------- */
@@ -533,11 +601,135 @@ function playEvents(events){return new Promise(res=>{
   if(!events||!events.length){res();return;}
   let i=0;
   const tick=()=>{ if(i>=events.length){res();return;} const ev=events[i++];
-    pushLog(ev); setTimeout(tick, evDelay(ev, events.length)); };
+    pushLog(ev);
+    let d=evDelay(ev, events.length);
+    if(ev&&ev.text&&ev.text.indexOf('コイン')===0){ flipCoin(ev.text.indexOf('オモテ')>=0); d=Math.max(d,1600); }
+    setTimeout(tick, d); };
   tick();});}
 
 /* ---------- 状態反映 ---------- */
 function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+/* コイントス演出 */
+function flipCoin(head){return new Promise(res=>{
+  const ov=document.getElementById('coinOverlay'),coin=document.getElementById('coin'),rs=document.getElementById('coinResult');
+  if(!ov||!coin){res();return;}
+  rs.textContent='';coin.textContent='';coin.className='coin spinning';ov.classList.remove('hidden');
+  setTimeout(()=>{coin.className='coin '+(head?'heads':'tails');coin.textContent=head?'表':'裏';
+    rs.textContent=head?'オモテ！':'ウラ…';rs.style.color=head?'#ffe79a':'#e3eaf3';},700);
+  setTimeout(()=>{ov.classList.add('hidden');res();},1500);
+});}
+async function animateCoins(events){
+  for(const e of (events||[])){
+    if(e&&e.text&&e.text.indexOf('コイン')===0){ await flipCoin(e.text.indexOf('オモテ')>=0); }
+  }
+}
+function hasCoin(events){return (events||[]).some(e=>e&&e.text&&e.text.indexOf('コイン')===0);}
+
+/* きぜつ→トラッシュ 演出：盤面差分(discard増＋ポケモン消失)でKOを検出 */
+function _pokeList(side){const out=[];if(side&&side.active&&side.active[0])out.push({area:'active',pos:0,cid:side.active[0].id});
+  ((side&&side.bench)||[]).forEach((b,i)=>{if(b)out.push({area:'bench',pos:i,cid:b.id});});return out;}
+function detectKOs(oldB,newB){
+  const kos=[];if(!oldB||!newB)return kos;
+  ['you','opp'].forEach(who=>{const o=oldB[who],n=newB[who];if(!o||!n)return;
+    if((n.discard||0)<=(o.discard||0))return;            // トラッシュが増えていなければKOでない（進化/入替を除外）
+    const cnt={};_pokeList(n).forEach(p=>cnt[p.cid]=(cnt[p.cid]||0)+1);
+    _pokeList(o).forEach(p=>{if((cnt[p.cid]||0)>0)cnt[p.cid]--;else kos.push({who,area:p.area,pos:p.pos,cid:p.cid});});});
+  return kos;
+}
+function markKO(ko){
+  const zone=document.getElementById((ko.who==='you'?'you':'opp')+(ko.area==='active'?'Active':'Bench'));
+  if(!zone)return;
+  let el=zone.querySelector('.pcard[data-cid="'+ko.cid+'"]');
+  if(!el){const cards=zone.querySelectorAll('.pcard');el=ko.area==='active'?cards[0]:cards[ko.pos];}
+  if(!el)return;
+  el.style.position='relative';
+  const badge=document.createElement('div');badge.className='kobadge';badge.textContent='💥 きぜつ';el.appendChild(badge);
+  el.classList.add('koanim');
+}
+
+/* ダメージ演出（人 vs AI のみ）：攻撃ラング＋ダメージ数字＋HPがじわじわ減る */
+function _findPoke(board,who,area,pos){const s=board&&board[who];if(!s)return null;return area==='active'?(s.active&&s.active[0]):((s.bench||[])[pos]);}
+function _tileEl(who,area,pos,cid){
+  const zone=document.getElementById((who==='you'?'you':'opp')+(area==='active'?'Active':'Bench'));
+  if(!zone)return null;
+  if(area==='active')return zone.querySelector('.pcard');
+  let el=zone.querySelector('.pcard[data-cid="'+cid+'"]'); if(el)return el;
+  return zone.querySelectorAll('.pcard')[pos]||null;
+}
+function detectDamage(oldB,newB){
+  const out=[];if(!oldB||!newB)return out;
+  ['you','opp'].forEach(who=>{
+    const positions=[['active',0]]; const ob=oldB[who];
+    ((ob&&ob.bench)||[]).forEach((_,i)=>positions.push(['bench',i]));
+    positions.forEach(([area,pos])=>{
+      const op=_findPoke(oldB,who,area,pos),np=_findPoke(newB,who,area,pos);
+      if(op&&np&&op.id===np.id&&typeof op.hp==='number'&&typeof np.hp==='number'&&np.hp<op.hp){
+        out.push({who,area,pos,cid:op.id,oldHp:op.hp,newHp:np.hp,maxHp:np.maxHp||op.maxHp});
+      }
+    });
+  });
+  return out;
+}
+function dmgPopup(el,n){if(!el||!n)return;el.style.position='relative';const d=document.createElement('div');d.className='dmgpop';d.textContent='-'+n;el.appendChild(d);setTimeout(()=>d.remove(),1100);}
+/* 対象カードの隣に「Nダメージ！」を大きく表示（画面端なら左側に出す） */
+function dmgCallout(el,n){
+  if(!el||!n)return;
+  const r=el.getBoundingClientRect();
+  const wrap=document.createElement('div');wrap.className='dmgcw';
+  wrap.style.top=(r.top+r.height/2)+'px';
+  if(r.right+180<window.innerWidth){ wrap.style.left=(r.right+8)+'px'; }
+  else { wrap.style.left=(r.left-8)+'px'; wrap.style.transform='translate(-100%,-50%)'; }
+  const inner=document.createElement('div');inner.className='dmgcallout';inner.textContent=n+'ダメージ！';
+  wrap.appendChild(inner);document.body.appendChild(wrap);
+  setTimeout(()=>wrap.remove(),1300);
+}
+/* 効果/特性/入れ替えの告知トースト（同時に1つだけ） */
+function showToast(text,ms){
+  if(!text)return;
+  document.querySelectorAll('.gtoast').forEach(x=>x.remove());
+  const d=document.createElement('div');d.className='gtoast';d.style.left='50%';d.style.transform='translateX(-50%)';d.textContent=text;
+  document.body.appendChild(d);setTimeout(()=>{if(d.parentNode)d.remove();},ms||1200);
+}
+/* バトル場ポケモンが入れ替わった/変わったのを検出して強調 */
+function detectSwitches(oldB,newB){
+  const out=[];
+  ['you','opp'].forEach(who=>{
+    const oa=oldB&&oldB[who]&&oldB[who].active&&oldB[who].active[0];
+    const na=newB&&newB[who]&&newB[who].active&&newB[who].active[0];
+    if(na&&(!oa||oa.id!==na.id)) out.push({who,cid:na.id});
+  });
+  return out;
+}
+function highlightActive(who){
+  const zone=document.getElementById((who==='you'?'you':'opp')+'Active');
+  const el=zone&&zone.querySelector('.pcard'); if(!el)return;
+  el.classList.add('actpulse'); setTimeout(()=>el.classList.remove('actpulse'),1900);
+}
+/* この手で見せるべき効果文言（入れ替え>進化>使った>状態異常）。無ければnull */
+function effectToast(events){
+  const find=(kw)=>{for(const e of (events||[])){const t=(e&&e.text)||'';if(t.indexOf(kw)>=0)return t;}return null;};
+  let t;
+  if((t=find('入れ替え')))return '🔄 '+t;
+  if((t=find('進化')))return '⬆️ '+t;
+  if((t=find('使った')))return '✨ '+t;
+  for(const k of ['どく','やけど','ねむり','まひ','こんらん']){ if((t=find(k)))return '☠️ '+t; }
+  return null;
+}
+function hitFlash(el){if(!el)return;el.classList.add('hitflash');setTimeout(()=>el.classList.remove('hitflash'),500);}
+function setHp(el,hp,maxHp){
+  const bar=el.querySelector('.hpbar i');if(bar){bar.style.transition='none';bar.style.width=Math.max(0,Math.round(100*hp/maxHp))+'%';}
+  const txt=el.querySelector('.ovln span');if(txt)txt.textContent='HP '+Math.max(0,Math.round(hp))+'/'+maxHp;
+}
+function tweenHp(el,fromHp,toHp,maxHp,ms){
+  if(!el)return;ms=ms||650;const t0=performance.now();
+  const step=(t)=>{const k=Math.min(1,(t-t0)/ms);const cur=fromHp+(toHp-fromHp)*k;setHp(el,cur,maxHp);if(k<1)requestAnimationFrame(step);};
+  requestAnimationFrame(step);
+}
+function attackerSide(events){for(const e of (events||[])){if(e&&e.text&&e.text.indexOf('のワザ')>=0)return e.who;}return null;}
+function lunge(who){const zone=document.getElementById((who==='you'?'you':'opp')+'Active');const el=zone&&zone.querySelector('.pcard');if(!el)return;const cl=who==='you'?'lungeUp':'lungeDown';el.classList.add(cl);setTimeout(()=>el.classList.remove(cl),430);}
+function koDmg(events,name){for(const e of (events||[])){if(e&&e.text&&name&&e.text.indexOf('「'+name+'」')>=0){const m=e.text.match(/(\d+)\s*ダメージ/);if(m)return +m[1];}}return 0;}
+
 async function playAiSteps(ns){
   // AIの行動を1手ずつ（盤面も段階的に）約1秒間隔で再生する
   const ask=document.getElementById('ask');
@@ -546,10 +738,42 @@ async function playAiSteps(ns){
   document.getElementById('aiControls').classList.add('hidden');
   const sm=(typeof speedMult==='number'&&speedMult>0)?speedMult:1;
   const delay=Math.max(250,Math.round(1000/sm));
+  const human=(ns.mode!=='ai');   // ダメージ/HP演出は人の対戦のみ（AI同士は不要）
   for(const st of ns.aiSteps){
+    const prev=STATE&&STATE.board;
+    // 1) 攻撃ラング（人vsAIのみ）
+    const atk=human?attackerSide(st.events):null;
+    if(atk){ lunge(atk); await sleep(320); }
+    // 2) KO：新盤面前に「きぜつ→トラッシュ」。人vsAIはHPを0までドレイン＋ダメージ数字
+    const kos=detectKOs(prev, st.board);
+    if(kos.length){
+      if(human){
+        kos.forEach(ko=>{const el=_tileEl(ko.who,ko.area,ko.pos,ko.cid),op=_findPoke(prev,ko.who,ko.area,ko.pos);
+          if(el&&op){dmgCallout(el,koDmg(st.events,op.name)||op.hp);hitFlash(el);tweenHp(el,op.hp,0,op.maxHp||op.hp,450);}});
+        await sleep(520);
+      }
+      kos.forEach(markKO); await sleep(human?820:950);
+    }
+    // 3) ダメージ（生存ポケモン）：新盤面を描いてから旧HPに戻し→じわじわ減らす
+    const dmgs=human?detectDamage(prev, st.board):[];
     STATE=Object.assign({},ns,{board:st.board,select:null,result:-1});
     renderBoard();
+    if(dmgs.length){
+      // 「Nダメージ！」を大きく出し、しっかり読める“間”を置いてからHPをじわじわ減らす
+      dmgs.forEach(d=>{const el=_tileEl(d.who,d.area,d.pos,d.cid);if(el){setHp(el,d.oldHp,d.maxHp);dmgCallout(el,d.oldHp-d.newHp);hitFlash(el);}});
+      await sleep(620);
+      dmgs.forEach(d=>{const el=_tileEl(d.who,d.area,d.pos,d.cid);if(el)tweenHp(el,d.oldHp,d.newHp,d.maxHp,700);});
+      await sleep(820);
+    }
+    // 4) 効果/特性/入れ替えを告知（中央トースト＋バトル場ポケモンを強調）
+    const sws=detectSwitches(prev, st.board);
+    sws.forEach(s=>highlightActive(s.who));
+    const tt=effectToast(st.events);
+    if(tt) showToast(tt);
+    if(sws.length || (tt&&tt.indexOf('入れ替え')>=0)) await sleep(700);   // 入れ替えは“間”を置いて気づけるように
+    // 5) ログ＋コイントス演出
     (st.events||[]).forEach(pushLog);
+    if(hasCoin(st.events)) await animateCoins(st.events);
     await sleep(delay);
   }
 }

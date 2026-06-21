@@ -161,8 +161,8 @@ def _run_task(task):
 
 def _build_standings(results):
     """(i, j, result) の集計を api_tournament と同じ並びで作る。"""
-    stand = {a["id"]: {"name": a["name"], "wins": 0, "losses": 0,
-                       "draws": 0, "games": 0} for a in AGENTS}
+    stand = {a["id"]: {"id": a["id"], "name": a["name"], "wins": 0,
+                       "losses": 0, "draws": 0, "games": 0} for a in AGENTS}
     for i, j, res in results:
         id0, id1 = AGENTS[i]["id"], AGENTS[j]["id"]
         stand[id0]["games"] += 1

@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}バトルロワイヤル | ポケカ{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/play'">対戦モードへ</button>
+{% endblock %}
+
+{% block head %}
+<style>
+  .rl{max-width:880px;margin:0 auto;}
+  .rl .lead{color:var(--sub);line-height:1.85;margin-bottom:16px;}
+  .rl section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:14px 0;box-shadow:0 3px 14px #0b346b0a;}
+  .rl h3{font-size:17px;color:var(--teal);margin:0 0 12px;display:flex;align-items:center;gap:8px;}
+  /* 殿堂入り */
+  .hof{display:flex;flex-direction:column;gap:6px;}
+  .hof .row{display:flex;align-items:center;gap:10px;padding:7px 12px;border-radius:10px;background:#fffbe9;border:1px solid #f0e0a8;}
+  .hof .row .crown{font-size:18px;}
+  .hof .row .nm{font-weight:800;color:#7a5a00;}
+  .hof .row .dt{margin-left:auto;font-size:12px;color:#a08a3a;}
+  .hof .empty{color:var(--sub);font-size:14px;padding:6px 2px;}
+  /* ラダー */
+  .ladder{display:flex;flex-direction:column;gap:8px;}
+  .rung{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:11px 14px;background:#fff;transition:.15s;}
+  .rung .badge{flex:0 0 auto;width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;color:#fff;background:#9fb0c6;}
+  .rung .meta{flex:1 1 auto;min-width:0;}
+  .rung .meta .nm{font-weight:800;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rung .meta .sub{font-size:12px;color:var(--sub);}
+  .rung .st{flex:0 0 auto;font-weight:800;font-size:13px;padding:5px 10px;border-radius:999px;}
+  .rung.cleared{background:#eefcf3;border-color:#bfe8cf;}
+  .rung.cleared .badge{background:#34c777;}
+  .rung.cleared .st{color:#1f9e57;background:#d6f5e3;}
+  .rung.current{border-color:var(--blue);box-shadow:0 0 0 3px #4a90ff22;}
+  .rung.current .badge{background:var(--blue);}
+  .rung.current .st{color:#fff;background:var(--blue);}
+  .rung.locked{opacity:.55;}
+  .rung.locked .st{color:#7d8aa0;background:#eef2f7;}
+  .rung.boss .badge{background:linear-gradient(135deg,#ff8a3c,#ff5d7a);}
+  /* デッキ選択 */
+  .deckRow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0;}
+  .deckRow select{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff;min-width:170px;}
+  .deckPreview{margin-top:8px;}
+  .rl .start{font-size:16px;}
+  .rl .start:disabled{opacity:.5;cursor:not-allowed;}
+  .rl .champ{text-align:center;padding:10px 0;}
+  .rl .champ .big{font-size:22px;font-weight:900;color:#c87b00;}
+  .rl .nameInput{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;justify-content:center;}
+  .rl .nameInput input{border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:15px;min-width:200px;}
+  .rl .reset{font-size:12px;color:var(--sub);background:none;border:none;text-decoration:underline;cursor:pointer;padding:4px;}
+  .rl .msg{color:#e0556b;font-weight:700;margin-top:8px;white-space:pre-wrap;}
+  .rl .progressTxt{font-weight:800;color:var(--blue);}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page rl">
+  <div class="crumb"><a href="/">ホーム</a> › <a href="/play">対戦</a> › バトルロワイヤル</div>
+  <h2 class="pageTitle">👑 バトルロワイヤル</h2>
+  <p class="lead">登録AIの中で<strong>勝率が高い上位5体</strong>に、<strong>5位 → 1位</strong>の順で挑戦するモードです。<br>
+  1体倒すごとに次の相手へ進めます。負けても同じ相手に何度でも再挑戦できます。<br>
+  最強（1位）まで全員を倒すと<strong>「殿堂入り」</strong>として名前を残せます。</p>
+
+  <!-- 殿堂入りリスト -->
+  <section>
+    <h3>🏅 殿堂入りリスト</h3>
+    <div id="hof" class="hof"><div class="empty">読み込み中…</div></div>
+  </section>
+
+  <!-- ラダー -->
+  <section>
+    <h3>🪜 挑戦ラダー <span id="progressTxt" class="progressTxt" style="margin-left:auto;font-size:13px"></span></h3>
+    <div id="ladder" class="ladder"><div class="empty" style="color:var(--sub)">読み込み中…</div></div>
+    <div style="text-align:right;margin-top:8px"><button class="reset" id="resetBtn" type="button">進行状況をリセット</button></div>
+  </section>
+
+  <!-- あなたのデッキ -->
+  <section id="deckSection">
+    <h3>🃏 あなたのデッキ</h3>
+    <div class="deckRow">
+      <select id="deckType">
+        <option value="user">保存済みデッキ</option>
+        <option value="agent">登録AIのデッキ</option>
+      </select>
+      <select id="deckChoice"></select>
+      <button type="button" class="gray" onclick="location.href='/builder'">デッキを作成</button>
+    </div>
+    <div id="deckPreview" class="deckPreview"></div>
+  </section>
+
+  <!-- 開始 / 殿堂入り登録 -->
+  <section id="actionSection" style="text-align:center">
+    <div id="startWrap">
+      <button id="startBtn" class="start" type="button">▶ 第<span id="stepNo">1</span>戦に挑戦する</button>
+    </div>
+    <div id="champWrap" style="display:none">
+      <div class="champ">
+        <div class="big">🎉 全員撃破！ おめでとうございます 🎉</div>
+        <p style="color:var(--sub);margin:6px 0">あなたの名前を殿堂入りリストに残しましょう。</p>
+        <div class="nameInput">
+          <input id="hofName" type="text" maxlength="24" placeholder="名前を入力（最大24文字）">
+          <button id="hofBtn" type="button">殿堂入りに登録</button>
+        </div>
+      </div>
+    </div>
+    <div id="rlMsg" class="msg"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+const PKEY='royale_progress', DKEY='royale_deck';
+let USER=[], AGENTS=[], LADDER=[], STEPS=[], progress=0;
+
+function setMsg(m=''){document.getElementById('rlMsg').textContent=m;}
+function getProgress(){const v=parseInt(localStorage.getItem(PKEY)||'0',10);return isNaN(v)?0:v;}
+function setProgress(v){progress=v;localStorage.setItem(PKEY,String(v));}
+
+/* ---- 殿堂入り ---- */
+function fmtDate(iso){try{const d=new Date(iso);return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;}catch(e){return '';}}
+async function loadHof(){
+  const box=document.getElementById('hof');
+  try{
+    const r=await get('/api/royale/hof');
+    const es=r.entries||[];
+    if(!es.length){box.innerHTML='<div class="empty">まだ殿堂入りした人はいません。最強を倒して最初の1人になりましょう！</div>';return;}
+    box.innerHTML=es.map((e,i)=>`<div class="row"><span class="crown">${i===0?'👑':'🏅'}</span><span class="nm">${escapeHtml(e.name)}</span><span class="dt">${fmtDate(e.at)}</span></div>`).join('');
+  }catch(e){box.innerHTML='<div class="empty">殿堂入りリストを読み込めませんでした。</div>';}
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/* ---- ラダー描画 ---- */
+function renderLadder(){
+  const box=document.getElementById('ladder');
+  if(!STEPS.length){box.innerHTML='<div class="empty" style="color:var(--sub)">ランキングがまだありません。「個別AI評価」や総当たりでAIを評価すると相手が決まります。</div>';
+    document.getElementById('startBtn').disabled=true;return;}
+  // 上に最強(1位)、下に5位。STEPS は弱→強なので逆順に描く。
+  const rows=[];
+  for(let i=STEPS.length-1;i>=0;i--){
+    const s=STEPS[i], stepNo=i+1;
+    let cls='locked', st='🔒 ロック';
+    if(i<progress){cls='cleared';st='✓ クリア';}
+    else if(i===progress){cls='current';st='▶ 挑戦中';}
+    const boss=(s.rank===1)?' boss':'';
+    rows.push(`<div class="rung ${cls}${boss}">
+      <div class="badge">${s.rank===1?'👑':(s.rank+'位')}</div>
+      <div class="meta"><div class="nm">${escapeHtml(s.name)}</div>
+        <div class="sub">第${stepNo}戦 ・ 総合勝率 ${s.winRate}%（${s.wins}勝${s.losses}敗${s.draws}分）</div></div>
+      <div class="st">${st}</div></div>`);
+  }
+  box.innerHTML=rows.join('');
+  const done=progress>=STEPS.length;
+  document.getElementById('progressTxt').textContent=`${Math.min(progress,STEPS.length)} / ${STEPS.length} 突破`;
+  document.getElementById('startWrap').style.display=done?'none':'';
+  document.getElementById('champWrap').style.display=done?'':'none';
+  if(!done) document.getElementById('stepNo').textContent=String(progress+1);
+}
+
+/* ---- デッキ選択 ---- */
+function deckCardsHtml(cards){
+  if(!cards||!cards.length)return '';
+  return '<div class="deckCards">'+cards.map(c=>{
+    const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name||('ID'+c.id)}</div>`;
+    return `<div class="miniCard" title="${c.name||''}×${c.count}">${inner}<div class="cnt">×${c.count}</div></div>`;
+  }).join('')+'</div>';
+}
+function decksFor(type){
+  if(type==='user')return USER;
+  if(type==='agent')return AGENTS.filter(a=>a.cards&&a.cards.length); // デッキ選択できないAIは除外
+  return [];
+}
+function initDeckPicker(){
+  const typeSel=document.getElementById('deckType');
+  const choiceSel=document.getElementById('deckChoice');
+  const prev=document.getElementById('deckPreview');
+  const saved=JSON.parse(localStorage.getItem(DKEY)||'null');
+  function refresh(){
+    const type=typeSel.value, ds=decksFor(type);
+    choiceSel.innerHTML=ds.length?ds.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')
+      :'<option value="">（デッキがありません）</option>';
+    apply();
+  }
+  function apply(){
+    const type=typeSel.value, id=choiceSel.value;
+    const d=decksFor(type).find(x=>x.id===id);
+    prev.innerHTML=d?deckCardsHtml(d.cards):'';
+    if(id) localStorage.setItem(DKEY,JSON.stringify({mode:type,id}));
+  }
+  typeSel.addEventListener('change',refresh);
+  choiceSel.addEventListener('change',apply);
+  if(saved&&saved.mode){typeSel.value=saved.mode;}
+  refresh();
+  if(saved&&saved.id){const opt=[...choiceSel.options].find(o=>o.value===saved.id);if(opt){choiceSel.value=saved.id;apply();}}
+}
+function chosenDeck(){
+  const type=document.getElementById('deckType').value;
+  const id=document.getElementById('deckChoice').value;
+  return id?{mode:type,id}:null;
+}
+
+/* ---- 挑戦開始 ---- */
+async function startBattle(){
+  setMsg('');
+  if(progress>=STEPS.length)return;
+  const deck=chosenDeck();
+  if(!deck){setMsg('あなたのデッキを選択してください。');return;}
+  const opp=STEPS[progress];
+  const fd=new FormData();
+  fd.append('match_mode','human');
+  fd.append('seed',String(Math.floor(Math.random()*1e9)));
+  fd.append('deck_mode',deck.mode);
+  if(deck.mode==='user') fd.append('user_deck_id',deck.id);
+  else fd.append('deck_agent_id',deck.id);
+  fd.append('opponent_type','registered');
+  fd.append('opponent_agent_id',opp.id);
+  const btn=document.getElementById('startBtn');btn.disabled=true;setMsg('対戦を準備中…');
+  try{
+    const r=await fetch('/api/new',{method:'POST',body:fd});
+    const ns=await r.json();
+    if(ns.error){setMsg(ns.error);btn.disabled=false;return;}
+    location.href='/battle?gid='+encodeURIComponent(ns.gid)+'&royale='+(progress+1);
+  }catch(e){setMsg('対戦の開始に失敗しました。');btn.disabled=false;}
+}
+
+/* ---- 殿堂入り登録 ---- */
+async function registerHof(){
+  const name=document.getElementById('hofName').value.trim();
+  if(!name){setMsg('名前を入力してください。');return;}
+  const btn=document.getElementById('hofBtn');btn.disabled=true;setMsg('');
+  try{
+    const r=await fetch('/api/royale/hof',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    const j=await r.json();
+    if(j.error){setMsg(j.error);btn.disabled=false;return;}
+    // 登録後は進行状況をリセットして再挑戦可能にする
+    setProgress(0);
+    document.getElementById('hofName').value='';
+    await loadHof();
+    renderLadder();
+    setMsg('');
+    alert('殿堂入りに登録しました！🎉 ラダーはリセットされ、再挑戦できます。');
+  }catch(e){setMsg('登録に失敗しました。');btn.disabled=false;}
+}
+
+/* ---- 初期化 ---- */
+function handleClearedParam(){
+  // /battle 勝利後に ?cleared=<step> で戻ってくる
+  const u=new URLSearchParams(location.search);
+  const c=parseInt(u.get('cleared')||'',10);
+  if(!isNaN(c)){
+    if(c===progress+1) setProgress(c);        // 想定どおりの相手を倒した
+    history.replaceState(null,'',location.pathname);
+  }
+}
+(async function(){
+  progress=getProgress();
+  document.getElementById('startBtn').addEventListener('click',startBattle);
+  document.getElementById('hofBtn').addEventListener('click',registerHof);
+  document.getElementById('resetBtn').addEventListener('click',()=>{
+    if(confirm('挑戦の進行状況を最初（第1戦）に戻します。よろしいですか？')){setProgress(0);renderLadder();}
+  });
+  loadHof();
+  try{
+    const [cfg,rank]=await Promise.all([get('/api/config'),get('/api/royale/ranking')]);
+    USER=cfg.userDecks||[]; AGENTS=cfg.agents||[];
+    LADDER=rank.ladder||[];                 // 強→弱 (rank1..5)
+    STEPS=LADDER.slice().reverse();         // 弱→強（挑戦順, index0=第1戦）
+    if(progress>STEPS.length) setProgress(STEPS.length);
+    handleClearedParam();
+    initDeckPicker();
+    renderLadder();
+  }catch(e){setMsg('データの読み込みに失敗しました。');}
+})();
+</script>
+{% endblock %}
