@@ -209,9 +209,15 @@ def card_detail(cid):
 COND_NAME = {0: "どく", 1: "やけど", 2: "ねむり", 3: "まひ", 4: "こんらん"}
 
 
-def translate_logs(ob, human_index=0):
+def translate_logs(ob, human_index=0, st=None):
     """Observation.logs を、人間視点の日本語イベント列に変換する。
-    返り値: [{"who": "you"|"opp"|"", "text": str}]"""
+    返り値: [{"who": "you"|"opp"|"", "text": str}]
+
+    st: ドロー種別判定の状態を delta をまたいで引き継ぐための dict。
+        obs.logs は select 毎の差分のため、AIターンは複数 delta に分割される。
+        PLAY（原因カード）とその効果ドローが別 delta になっても正しく紐付けるため、
+        呼び出し側（_collect_events/_snap）が同じ dict を渡して状態を保持する。
+        None の場合は1回ぶんで完結（後方互換）。"""
     events = []
     if not ob or not ob.logs:
         return events
@@ -224,6 +230,13 @@ def translate_logs(ob, human_index=0):
     def label(pi):
         return "あなた" if pi == human_index else "相手"
 
+    # ドロー種別判定の状態（st があれば delta をまたいで引き継ぐ）
+    if st is None:
+        st = {}
+    turn_player = st.get("turn_player")          # 現在ターンのプレイヤー
+    pending_turn_draw = st.get("pending", False)  # TURN_START直後の通常ドロー待ち
+    last_play_name = st.get("last_play")          # 直前に使ったカード（効果ドローの原因）
+
     for lg in ob.logs:
         try:
             t = LogType(lg.type)
@@ -233,10 +246,19 @@ def translate_logs(ob, human_index=0):
         w = who(pi)
         nm = (card_name(lg.cardId) if getattr(lg, "cardId", None) else "")
         txt = None
-        kind = None  # 連続ドロー集約用の内部タグ（"drawn"=名前公開, "drawh"=伏せ）
-        dnm = None
+        # 連続ドロー集約用の内部タグ:
+        #   drawturn=ターン開始の通常ドロー / draweff=カード効果のドロー
+        #   drawn=初期手札の名前公開 / drawh=初期手札などの伏せ
+        kind = None
+        dnm = None      # 引いたカード名（自分の公開ドローのみ）
+        cause = None    # 効果ドローの原因カード名（直前のPLAY）
         if t == LogType.TURN_START:
             txt = f"―― {label(pi)}のターン ――"
+            turn_player = pi
+            pending_turn_draw = True   # この直後の同player DRAW＝通常ドロー
+            last_play_name = None      # ターンが変われば効果の原因はリセット
+        elif t == LogType.TURN_END:
+            last_play_name = None
         elif t == LogType.HAS_BASIC_POKEMON:
             # 最初の手札にたねポケモンが無いと引き直し（マリガン）。
             # 開始時に「引いた」が大量に並ぶのはこの引き直しが理由なので明示する。
@@ -244,19 +266,23 @@ def translate_logs(ob, human_index=0):
                 txt = (f"↻ {label(pi)}は最初の手札にたねポケモンが無く、"
                        f"手札を引き直し（マリガン）")
             # たねポケモンがある場合は通知不要（ノイズ削減のため出さない）
-        elif t == LogType.DRAW:
+        elif t in (LogType.DRAW, LogType.DRAW_REVERSE):
             # 相手が引いたカード名は隠れ情報なので伏せる（自分の引きのみ公開）
-            if w == "you" and nm:
-                txt = f"あなたが「{nm}」を引いた"
-                kind, dnm = "drawn", nm
+            named = (t == LogType.DRAW and w == "you" and nm)
+            dnm = nm if named else None
+            if pending_turn_draw and pi == turn_player:
+                kind = "drawturn"           # ターン開始の通常ドロー
+                pending_turn_draw = False
+            elif turn_player is not None and last_play_name:
+                kind, cause = "draweff", last_play_name   # カード効果のドロー
+            elif turn_player is not None:
+                kind = "draweff"            # ターン中だが原因不明→効果扱い
             else:
-                txt = f"{label(pi)}がカードを引いた"
-                kind = "drawh"
-        elif t == LogType.DRAW_REVERSE:
-            txt = f"{label(pi)}がカードを引いた"
-            kind = "drawh"
+                kind = "drawn" if named else "drawh"      # 開始時の手札/マリガン
+            txt = "(draw)"  # プレースホルダ。実際の文言は _compress_draws で生成
         elif t == LogType.PLAY:
             txt = f"{label(pi)}が「{nm}」を出した／使った"
+            last_play_name = nm   # 直後のドローはこのカードの効果とみなす
         elif t == LogType.ATTACH:
             tgt = card_name(lg.cardIdTarget) if getattr(lg, "cardIdTarget", None) else ""
             txt = f"{label(pi)}が「{nm}」を{('「'+tgt+'」に') if tgt else ''}つけた"
@@ -288,44 +314,78 @@ def translate_logs(ob, human_index=0):
                       4: "カードの効果"}.get(getattr(lg, "reason", 0), "")
             txt = f"決着（{reason}）" if reason else "決着"
         if txt:
-            events.append({"who": w, "text": txt, "_k": kind, "_nm": dnm})
+            events.append({"who": w, "text": txt, "_k": kind,
+                           "_nm": dnm, "_cause": cause})
+    # 状態を呼び出し側に書き戻す（次 delta へ引き継ぐ）
+    st["turn_player"] = turn_player
+    st["pending"] = pending_turn_draw
+    st["last_play"] = last_play_name
     return _compress_draws(events)
 
 
-def _compress_draws(events):
-    """連続するドローを1行に集約してログのノイズを抑える。
+_DRAW_KINDS = ("drawturn", "draweff", "drawn", "drawh")
 
-    - 伏せドロー（相手/自分の非公開）は2枚以上で「○○がカードをN枚引いた」。
-    - 自分の名前公開ドローは4枚以上（=開始手札やドローサポートのまとめ引き）で
-      「あなたがN枚引いた（A、B、…）」。通常の1〜3枚は元の1行ずつのまま。
-    内部タグ(_k/_nm)は除去して {who,text} のみ返す。
+
+def _compress_draws(events):
+    """ドローを種別ごとに集約し、通常ドロー/効果ドローを区別して文言化する。
+
+    - 通常ドロー(drawturn): 「○○が「X」を引いた（ターン開始のドロー）」（常に1枚）。
+    - 効果ドロー(draweff): 原因カードを明示し、2枚以上はまとめる。
+      例「あなたが「博士の研究」の効果で7枚引いた（A、B…）」。
+    - 開始手札(drawn/drawh): 伏せは2枚以上で「N枚引いた」、自分の公開は4枚以上で集約。
+    連続する同種・同原因のドローを1行にまとめる。内部タグは除去する。
     """
     out = []
     i, n = 0, len(events)
     while i < n:
         e = events[i]
         k = e.get("_k")
-        if k in ("drawn", "drawh"):
-            j = i
-            while (j < n and events[j].get("_k") == k
-                   and events[j]["who"] == e["who"]):
-                j += 1
-            grp = events[i:j]
-            cnt = len(grp)
-            lab = "あなた" if e["who"] == "you" else "相手"
-            if k == "drawh" and cnt >= 2:
-                out.append({"who": e["who"],
-                            "text": f"{lab}がカードを{cnt}枚引いた"})
-            elif k == "drawn" and cnt >= 4:
-                names = "、".join(g.get("_nm") or "" for g in grp)
-                out.append({"who": e["who"],
-                            "text": f"{lab}が{cnt}枚引いた（{names}）"})
-            else:
-                out.extend({"who": g["who"], "text": g["text"]} for g in grp)
-            i = j
-        else:
+        if k not in _DRAW_KINDS:
             out.append({"who": e["who"], "text": e["text"]})
             i += 1
+            continue
+        cause = e.get("_cause")
+        who = e["who"]
+        j = i
+        while (j < n and events[j].get("_k") == k
+               and events[j]["who"] == who
+               and events[j].get("_cause") == cause):
+            j += 1
+        grp = events[i:j]
+        cnt = len(grp)
+        lab = "あなた" if who == "you" else "相手"
+        names = [g.get("_nm") for g in grp if g.get("_nm")]
+        if k == "drawturn":
+            # 通常ドローは1枚ずつ（名前があれば公開）。
+            for g in grp:
+                if g.get("_nm"):
+                    txt = f"{lab}が「{g['_nm']}」を引いた（ターン開始のドロー）"
+                else:
+                    txt = f"{lab}がカードを引いた（ターン開始のドロー）"
+                out.append({"who": who, "text": txt})
+        elif k == "draweff":
+            cc = f"「{cause}」の効果で" if cause else "効果で"
+            if names:
+                if cnt >= 2:
+                    txt = f"{lab}が{cc}{cnt}枚引いた（{'、'.join(names)}）"
+                else:
+                    txt = f"{lab}が{cc}「{names[0]}」を引いた"
+            else:
+                txt = (f"{lab}が{cc}カードを{cnt}枚引いた" if cnt >= 2
+                       else f"{lab}が{cc}カードを引いた")
+            out.append({"who": who, "text": txt})
+        elif k == "drawh":
+            txt = (f"{lab}がカードを{cnt}枚引いた" if cnt >= 2
+                   else f"{lab}がカードを引いた")
+            out.append({"who": who, "text": txt})
+        else:  # drawn（開始手札の名前公開）
+            if cnt >= 4:
+                out.append({"who": who,
+                            "text": f"{lab}が{cnt}枚引いた（{'、'.join(names)}）"})
+            else:
+                for nm in names:
+                    out.append({"who": who, "text": f"{lab}が「{nm}」を引いた"})
+        i = j
     return out
 
 
