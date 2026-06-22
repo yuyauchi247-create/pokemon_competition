@@ -191,7 +191,7 @@ function initDeckPicker(){
   const saved=JSON.parse(localStorage.getItem(DKEY)||'null');
   function refresh(){
     const type=typeSel.value, ds=decksFor(type);
-    choiceSel.innerHTML=ds.length?ds.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')
+    choiceSel.innerHTML=ds.length?ds.map(d=>`<option value="${d.id}"${d.hasBasic===false?' disabled':''}>${d.name}${d.hasBasic===false?'（⚠たね無し・使用不可）':''}</option>`).join('')
       :'<option value="">（デッキがありません）</option>';
     apply();
   }
