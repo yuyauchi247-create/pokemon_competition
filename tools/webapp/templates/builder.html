@@ -16,9 +16,10 @@
       <button type="button" id="closeBuilderBtn" class="gray">デッキ一覧へ戻る</button>
     </div>
     <div class="csvImport" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 10px">
-      <span class="handLabel">📄 CSVから読み込み</span>
+      <span class="handLabel">📄 CSV</span>
       <input id="deckCsvFile" type="file" accept=".csv,text/csv" style="max-width:100%">
-      <span class="hint">カードID（1行1枚 / カンマ区切り）の60枚CSVを読み込み、下の作成中デッキに反映します。</span>
+      <button type="button" id="exportCsvBtn" class="gray">⬇ CSVを出力</button>
+      <span class="hint">カードID（1行1枚 / カンマ区切り）のCSVを読み込み・出力できます。</span>
     </div>
     <div class="builderTools">
       <input id="deckNameInput" type="text" placeholder="デッキ名（例: わたしの炎デッキ）">
@@ -239,6 +240,21 @@ function drawOne(){
 document.getElementById('draw5Btn').onclick=drawOpening;
 document.getElementById('draw1Btn').onclick=drawOne;
 document.getElementById('handClearBtn').onclick=()=>{HAND=[];DRAWPILE=[];renderHand();};
+
+// 作成中デッキをCSV（カードID 1行1枚）で出力（ダウンロード）。
+function sanitizeFileName(s){return (s||'deck').replace(/[\\/:*?"<>|]+/g,'_').trim()||'deck';}
+document.getElementById('exportCsvBtn').onclick=()=>{
+  if(!CURRENT_DECK.length){builderMessage('デッキが空です。カードを追加してから出力してください。');return;}
+  const ids=CURRENT_DECK.slice().sort((a,b)=>a-b);     // 同名がまとまるようID昇順
+  const csv=ids.join('\n')+'\n';
+  const name=sanitizeFileName(document.getElementById('deckNameInput').value)+'.csv';
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  builderMessage(`${ids.length}枚を「${name}」として出力しました。`);
+};
 
 // CSVアップロードで作成中デッキに読み込む（サーバで解析・検証）。
 document.getElementById('deckCsvFile').onchange=async e=>{
