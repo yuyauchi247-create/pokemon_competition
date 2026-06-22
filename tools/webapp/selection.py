@@ -135,6 +135,17 @@ def _card_rules() -> dict[int, dict[str, object]]:
     return rules
 
 
+def deck_has_basic(deck: list[int]) -> bool:
+    """デッキにたねポケモンが1枚以上あるか。
+
+    たねが無いデッキは対戦開始時に永久にマリガン（引き直し）が続いて進行不能になるため、
+    対戦に入れる前にこれで弾く。カードデータが無い環境では判定不能なので True（通す）。"""
+    rules = _card_rules()
+    if not rules:
+        return True
+    return any(bool(rules.get(cid, {}).get("basic")) for cid in deck)
+
+
 def validate_deck_for_builder(deck: list[int]) -> None:
     """デッキ作成画面から保存する60枚デッキを検証する。"""
     if len(deck) != 60:

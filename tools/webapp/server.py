@@ -35,7 +35,7 @@ from selection import (  # noqa: E402
     read_user_agent_deck, read_user_deck, user_agent_dir,
     sample_deck_options, save_user_agent, save_user_deck,
     update_user_agent_deck, update_user_deck, delete_user_deck,
-    validate_ai_picks, validate_deck_for_builder,
+    validate_ai_picks, validate_deck_for_builder, deck_has_basic,
 )
 from sim_env import (  # noqa: E402
     to_observation_class, battle_start, battle_select, battle_finish,
@@ -199,9 +199,19 @@ def _selected_deck(mode_field, sample_id_field, user_id_field, file_field, agent
     return read_sample_deck(deck_id), label
 
 
+def _require_basic_deck(deck):
+    """たねポケモンの無いデッキは対戦開始前に弾く（無限マリガン＝進行不能の防止）。"""
+    if deck and not deck_has_basic(deck):
+        raise SelectionError("選択したデッキにたねポケモンがありません。"
+                             "たねポケモンを含むデッキを選んでください。")
+    return deck
+
+
 def _selected_player_deck():
-    return _selected_deck("deck_mode", "deck_id", "user_deck_id", "deck_file",
-                          agent_id_field="deck_agent_id")
+    deck, label = _selected_deck("deck_mode", "deck_id", "user_deck_id", "deck_file",
+                                 agent_id_field="deck_agent_id")
+    _require_basic_deck(deck)
+    return deck, label
 
 
 def _agent_initial_observation():
@@ -330,11 +340,13 @@ def _selected_opponent(gid, default_deck):
                 "opponent_user_deck_id", "opponent_deck_file",
                 agent_id_field="opponent_deck_agent_id",
             )
+            _require_basic_deck(deck)
             return "rule", None, deck, f"ルールベースAI（{deck_name}）"
         return "rule", None, list(default_deck), "ルールベースAI"
 
     agent, deck, label = _load_agent_side(
         gid, "opponent", mode, "agent_file", "opponent_agent_id", default_deck)
+    _require_basic_deck(deck)
     return "custom", agent, deck, label
 
 
@@ -1047,10 +1059,14 @@ def _user_decks_payload():
     user_decks = []
     for opt in list_user_decks():
         try:
-            cards = deck_card_counts(read_user_deck(opt["id"]))
+            deck = read_user_deck(opt["id"])
+            cards = deck_card_counts(deck)
+            has_basic = deck_has_basic(deck)
         except SelectionError:
             cards = []
-        user_decks.append({"id": opt["id"], "name": opt["name"], "cards": _deck_preview(cards)})
+            has_basic = True  # 読めない場合は従来通り（弾かない）
+        user_decks.append({"id": opt["id"], "name": opt["name"],
+                           "cards": _deck_preview(cards), "hasBasic": has_basic})
     return user_decks
 
 
@@ -1131,6 +1147,8 @@ def api_save_user_deck():
     try:
         name = str(payload.get("name", "保存デッキ"))
         deck = [int(v) for v in payload.get("cards", [])]
+        if not deck_has_basic(deck):
+            raise SelectionError("たねポケモンを最低1枚入れてください。")
         saved = save_user_deck(name, deck)
         counts = deck_card_counts(read_user_deck(saved["id"]))
         return jsonify({**saved, "cards": _deck_preview(counts)})
@@ -1155,6 +1173,8 @@ def api_update_user_deck(deck_id):
     try:
         name = str(payload.get("name", "保存デッキ"))
         deck = [int(v) for v in payload.get("cards", [])]
+        if not deck_has_basic(deck):
+            raise SelectionError("たねポケモンを最低1枚入れてください。")
         saved = update_user_deck(deck_id, name, deck)
         counts = deck_card_counts(read_user_deck(saved["id"]))
         return jsonify({**saved, "cards": _deck_preview(counts)})

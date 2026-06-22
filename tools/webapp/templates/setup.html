@@ -179,7 +179,7 @@ function initDeckPicker(prefix){
     if(type==='same'){choiceSel.style.display='none';prev.innerHTML='<small>相手は自分と同じデッキを使います。</small>';setHidden(prefix,type,'');return;}
     choiceSel.style.display='';
     const ds=decksFor(type);
-    choiceSel.innerHTML=ds.length?ds.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')
+    choiceSel.innerHTML=ds.length?ds.map(d=>`<option value="${d.id}"${d.hasBasic===false?' disabled':''}>${d.name}${d.hasBasic===false?'（⚠たね無し・使用不可）':''}</option>`).join('')
       :'<option value="">（デッキがありません）</option>';
     applyChoice();
   }

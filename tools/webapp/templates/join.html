@@ -38,11 +38,14 @@ function renderDeckList(boxId,decks,radioName,onSelect){
       const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name||('ID'+c.id)}</div>`;
       return `<div class="miniCard" title="${c.name||''}×${c.count}">${inner}<div class="cnt">×${c.count}</div></div>`;
     }).join('');
+    const noBasic=d.hasBasic===false;
     const el=document.createElement('div');
-    el.className='deckCard';el.dataset.id=d.id;
-    el.innerHTML=`<div class="dkhd"><input type="radio" name="${radioName}" value="${d.id}"><span class="dknm">${d.name}</span></div>
+    el.className='deckCard'+(noBasic?' disabled':'');
+    if(noBasic){el.style.opacity='.5';el.style.cursor='not-allowed';}
+    el.dataset.id=d.id;
+    el.innerHTML=`<div class="dkhd"><input type="radio" name="${radioName}" value="${d.id}"${noBasic?' disabled':''}><span class="dknm">${d.name}${noBasic?' ⚠たね無し（使用不可）':''}</span></div>
       <div class="deckCards">${cards}</div>`;
-    el.onclick=()=>onSelect(d.id);
+    if(!noBasic) el.onclick=()=>onSelect(d.id);
     box.appendChild(el);
   });
 }

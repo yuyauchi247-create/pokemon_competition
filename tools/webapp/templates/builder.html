@@ -152,12 +152,18 @@ function removeCard(id){
   const i=CURRENT_DECK.indexOf(id);if(i>=0)CURRENT_DECK.splice(i,1);
   renderBuilderDeck();renderCardLibrary();
 }
+function deckHasBasic(){
+  // たねポケモン（stage に「たね」を含む）が1枚でもあるか
+  return CURRENT_DECK.some(id=>{const c=cardById(id);return c&&String(c.stage||'').includes('たね');});
+}
 function renderBuilderDeck(){
   const counts=deckCounts();
   const ids=Object.keys(counts).map(Number).sort((a,b)=>a-b);
   document.getElementById('deckCount').textContent=`${CURRENT_DECK.length}/60`;
-  document.getElementById('saveDeckBtn').disabled=CURRENT_DECK.length!==60;
-  const warn=deckWarnings();
+  const noBasic=CURRENT_DECK.length>0 && !deckHasBasic();
+  document.getElementById('saveDeckBtn').disabled=CURRENT_DECK.length!==60 || noBasic;
+  let warn=deckWarnings();
+  if(noBasic) warn=(warn?warn+' / ':'')+'⚠たねポケモンを最低1枚入れてください（このままでは保存・対戦できません）。';
   document.getElementById('builderMsg').textContent=warn;
   document.getElementById('builderDeck').innerHTML=ids.map(id=>{
     const c=cardById(id);
