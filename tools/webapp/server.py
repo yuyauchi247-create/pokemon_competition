@@ -43,6 +43,7 @@ from sim_env import (  # noqa: E402
     option_card, translate_logs, card_image_file, CARD_IMAGES_DIR,
     OptionType, AreaType, SelectContext, EnergyType,
 )
+from replay_recorder import ReplayRecorder  # noqa: E402
 
 HUMAN = 0
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -458,18 +459,21 @@ def _collect_events(g, obs):
         pass
 
 
-def _frame_board(g):
-    """リプレイ用に、現在の盤面スナップショット（両プレイヤー絶対index 0/1）を作る。"""
-    ob = to_observation_class(g["obs"])
+def _board_from_obs(obs_dict, hand_cache=None):
+    """observation(dict) から盤面スナップショット（両プレイヤー絶対index 0/1）を作る。
+
+    リプレイ生成(replay.json→表示)と対戦中の both で使う共通関数。"""
+    ob = to_observation_class(obs_dict)
     st = ob.current
     if st is None:
         return None
+    hand_cache = hand_cache or {}
 
     def side(idx):
         p = st.players[idx]
         act = p.active[0] if p.active and p.active[0] else None
         hand = ([card_meta(c.id) for c in p.hand]
-                if p.hand is not None else g["hand_cache"].get(idx))
+                if p.hand is not None else hand_cache.get(idx))
         return {
             "active": _poke_json(act),
             "bench": [_poke_json(b) for b in p.bench],
@@ -484,6 +488,26 @@ def _frame_board(g):
     return {"turn": st.turn, "you": side(0), "opp": side(1)}
 
 
+def _frame_board(g):
+    """リプレイ用に、現在の盤面スナップショット（両プレイヤー絶対index 0/1）を作る。"""
+    return _board_from_obs(g["obs"], g.get("hand_cache"))
+
+
+def _record_select(g, picks):
+    """battle_select を行い、その手を replay レコーダへ記録する（ゲーム進行の各 select で使う）。
+
+    記録するのは select 直前の observation（能動側視点）＋ action（picks）。"""
+    rec = g.get("recorder")
+    if rec is not None:
+        try:
+            ob = to_observation_class(g["obs"])
+            you = ob.current.yourIndex if ob.current else HUMAN
+            rec.record(g["obs"], you, picks)
+        except Exception:
+            pass
+    return battle_select(picks)
+
+
 def _capture_frame(g):
     """1手ぶんのスナップショット（盤面＋その間のイベント）をリプレイ用に記録。"""
     try:
@@ -496,10 +520,16 @@ def _capture_frame(g):
 
 
 def _save_match_log(g):
-    """対戦終了時に、対戦ログを data/logs/ に1ファイルとして保存する。"""
+    """対戦終了時に、対戦ログを Kaggle の replay.json 互換形式で data/logs/ に保存する。
+
+    observation/steps/action/reward/status の構造・中身を Kaggle に揃える。
+    画面のリプレイ表示は保存した replay.json から導出する（_replay_to_view）。"""
     if g.get("log_saved"):
         return
     g["log_saved"] = True
+    rec = g.get("recorder")
+    if rec is None:
+        return
     try:
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
         if g.get("mode") == "pvp":
@@ -512,16 +542,14 @@ def _save_match_log(g):
         winner = {0: p0, 1: p1}.get(result, "引き分け/未確定")
         finished = datetime.now(timezone.utc).isoformat()
         ts = finished.replace(":", "").replace("-", "").split(".")[0]
-        data = {
-            "gid": g.get("gid"), "mode": g.get("mode"),
-            "player0": p0, "player1": p1,
-            "result": result, "winner": winner,
-            "started_at": g.get("started_at"), "finished_at": finished,
-            "log": g.get("log", []),
-            "frames": g.get("frames", []),
-        }
+        replay = rec.finalize(result)
+        # ローカル固有メタは info に補足（info は自由 dict なので Kaggle 互換を壊さない）。
+        replay["info"]["TeamNames"] = [p0, p1]
+        replay["info"]["Mode"] = g.get("mode")
+        replay["info"]["StartedAt"] = g.get("started_at")
+        replay["info"]["FinishedAt"] = finished
         path = LOGS_DIR / f"{ts}_{g.get('mode')}_{g.get('gid', '')[:8]}.json"
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(replay, ensure_ascii=False, indent=2), encoding="utf-8")
         # 人が読みやすいテキスト版も併せて出力
         lines = [f"対戦ID: {g.get('gid')}", f"モード: {g.get('mode')}",
                  f"プレイヤー1(あなた視点): {p0}", f"プレイヤー2(相手視点): {p1}",
@@ -605,13 +633,13 @@ def _advance_until_human(g):
             # 先攻/後攻の選択（IS_FIRST）はランダムで自動決定
             if ob.select and int(ob.select.context) == int(SelectContext.IS_FIRST):
                 pick = g["rng"].randint(0, len(ob.select.option) - 1)
-                obs = battle_select([pick])
+                obs = _record_select(g, [pick])
                 g["obs"] = obs
                 _emit(record_step=False)  # コイン等の差分も保存ログへ反映
                 steps += 1
                 continue
             break  # 外部操作（人間 or ステップ）の入力待ち
-        obs = battle_select(_ai_pick(g, ob.select, obs))
+        obs = _record_select(g, _ai_pick(g, ob.select, obs))
         g["obs"] = obs
         _emit(record_step=True)  # AIの1手: ai_steps と 保存ログ の両方へ
         steps += 1
@@ -953,19 +981,75 @@ def api_tournament():
     return jsonify({"n": n, "standings": standings, "matches": matches})
 
 
+def _replay_result(replay):
+    """rewards から 勝者index(0/1)/引き分け(-1) を求める。"""
+    rewards = replay.get("rewards") or [0, 0]
+    if rewards == [1, -1]:
+        return 0
+    if rewards == [-1, 1]:
+        return 1
+    return -1
+
+
+def _replay_to_view(replay):
+    """保存した replay.json を、リプレイ画面が期待する {frames, log, ...} 形に変換する。
+
+    各ステップの能動側 observation.current から盤面を、logs からイベントを再構成する。"""
+    info = replay.get("info") or {}
+    names = info.get("TeamNames") or ["プレイヤー1", "プレイヤー2"]
+    result = _replay_result(replay)
+    winner = {0: names[0], 1: names[1]}.get(result, "引き分け/未確定")
+    frames, log, st_draw = [], [], {}
+    for step in replay.get("steps", []):
+        active = next((a for a in step if a.get("status") == "ACTIVE"), None)
+        if active is None:
+            continue
+        obs = active.get("observation") or {}
+        try:
+            board = _board_from_obs(obs)
+        except Exception:
+            board = None
+        if board is None:
+            continue
+        try:
+            evs = translate_logs(to_observation_class(obs), HUMAN, st=st_draw)
+        except Exception:
+            evs = []
+        turn = board.get("turn")
+        for e in evs:
+            log.append({"turn": turn, **e})
+        frames.append({"board": board, "events": evs, "result": result})
+    return {"gid": replay.get("id"), "mode": info.get("Mode"),
+            "player0": names[0], "player1": names[1],
+            "result": result, "winner": winner,
+            "started_at": info.get("StartedAt"), "finished_at": info.get("FinishedAt"),
+            "log": log, "frames": frames}
+
+
 @app.route("/api/logs", methods=["GET"])
 def api_logs():
-    """保存済み対戦ログ（.json）の一覧を返す。"""
+    """保存済み対戦ログ（replay.json 互換）の一覧を返す。"""
     items = []
     if LOGS_DIR.exists():
         for p in sorted(LOGS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
             try:
                 d = json.loads(p.read_text(encoding="utf-8"))
-                items.append({"file": p.stem, "mode": d.get("mode"),
-                              "player0": d.get("player0"), "player1": d.get("player1"),
-                              "winner": d.get("winner"), "result": d.get("result"),
-                              "finished_at": d.get("finished_at"),
-                              "frames": len(d.get("frames") or [])})
+                if "steps" not in d and "frames" in d:
+                    # 旧形式ログ（後方互換）
+                    items.append({"file": p.stem, "mode": d.get("mode"),
+                                  "player0": d.get("player0"), "player1": d.get("player1"),
+                                  "winner": d.get("winner"), "result": d.get("result"),
+                                  "finished_at": d.get("finished_at"),
+                                  "frames": len(d.get("frames") or [])})
+                    continue
+                info = d.get("info") or {}
+                names = info.get("TeamNames") or ["プレイヤー1", "プレイヤー2"]
+                result = _replay_result(d)
+                items.append({"file": p.stem, "mode": info.get("Mode"),
+                              "player0": names[0], "player1": names[1],
+                              "winner": {0: names[0], 1: names[1]}.get(result, "引き分け/未確定"),
+                              "result": result, "finished_at": info.get("FinishedAt"),
+                              "frames": len(d.get("steps") or [])})
             except Exception:
                 pass
     return jsonify({"logs": items})
@@ -973,16 +1057,19 @@ def api_logs():
 
 @app.route("/api/logs/<name>", methods=["GET"])
 def api_log(name):
-    """1対戦ぶんのログ（frames込み）を返す。"""
+    """1対戦ぶんのログを、リプレイ画面用に変換して返す（保存は replay.json 互換）。"""
     if not name.replace("_", "").isalnum():
         abort(404)
     p = LOGS_DIR / (name + ".json")
     if not p.exists():
         abort(404)
     try:
-        return jsonify(json.loads(p.read_text(encoding="utf-8")))
+        d = json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         abort(404)
+    if "steps" not in d and "frames" in d:
+        return jsonify(d)  # 旧形式はそのまま
+    return jsonify(_replay_to_view(d))
 
 
 _AGENTS_CARDS_CACHE = {"sig": None, "data": None}
@@ -1404,6 +1491,7 @@ def api_new():
     g["player_type"], g["player_agent"], g["player_label"] = player_type, player_agent, player_label
     g["opponent_type"], g["opponent_agent"] = opponent_type, opponent_agent
     g["opponent_label"], g["deck_label"] = opponent_label, deck_label
+    g["recorder"] = ReplayRecorder([player_label, opponent_label], episode_id=gid)
     GAMES[gid] = g
     _evict_if_needed()  # 他対戦を破棄する際 ptr が切り替わるので、この後で再アクティブ化する
     _activate(g)
@@ -1436,6 +1524,8 @@ def api_join():
         return jsonify({"error": f"battle start failed (errorType={start.errorType})"}), 500
     g["ptr"] = start.battlePtr
     g["obs"], g["result"], g["running"], g["events"], g["status"] = obs, -1, True, [], "playing"
+    g["recorder"] = ReplayRecorder([g["labels"].get(0, "プレイヤー1"),
+                                    g["labels"].get(1, "プレイヤー2")], episode_id=g["gid"])
     try:
         _advance_until_human(g)
     except SelectionError as exc:
@@ -1513,7 +1603,7 @@ def api_select():
     if not ok:
         return jsonify({"error": "invalid picks", **_state_json(g, viewer)}), 400
     g["events"] = []
-    g["obs"] = battle_select(picks)
+    g["obs"] = _record_select(g, picks)
     g["ver"] = g.get("ver", 0) + 1
     try:
         _advance_until_human(g)
@@ -1540,7 +1630,7 @@ def api_step():
             return jsonify(_state_json(g))
         picks = _agent_pick(g, g.get("player_type"), g.get("player_agent"), sel, g["obs"])
         g["events"] = []
-        g["obs"] = battle_select(picks)
+        g["obs"] = _record_select(g, picks)
         g["ver"] = g.get("ver", 0) + 1
         _advance_until_human(g)
     except SelectionError as exc:
