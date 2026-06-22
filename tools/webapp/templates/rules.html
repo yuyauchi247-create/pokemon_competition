@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}ポケモンカードのルール | ポケカ{% endblock %}
+
+{% block nav %}
+<button type="button" class="gray" onclick="location.href='/'">ホームへ</button>
+{% endblock %}
+
+{% block head %}
+<style>
+  .rules{max-width:880px;margin:0 auto;}
+  .rules section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:14px 0;box-shadow:0 3px 14px #0b346b0a;}
+  .rules h3{font-size:17px;color:var(--teal);margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+  .rules p{line-height:1.85;color:var(--ink);margin:6px 0;}
+  .rules ul,.rules ol{line-height:1.9;margin:6px 0 6px 1.2em;color:var(--ink);}
+  .rules .lead{color:var(--sub);line-height:1.85;margin-bottom:8px;}
+  .rules .win{background:#eefcf3;border:1px solid #bfe8cf;border-radius:10px;padding:10px 12px;}
+  .rules .tag{display:inline-block;font-size:12px;font-weight:800;color:#15407a;background:#e7f0ff;border-radius:8px;padding:2px 8px;margin-right:6px;}
+  .rules .note{font-size:13px;color:var(--sub);}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px;}
+  .toc a{font-size:13px;color:var(--teal);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:4px 12px;background:#fff;}
+  .toc a:hover{background:#f1f7ff;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page rules">
+  <div class="crumb"><a href="/">ホーム</a> › ポケモンカードのルール</div>
+  <h2 class="pageTitle">📘 ポケモンカードのルール</h2>
+  <p class="lead">ポケモンカードゲーム（ポケカ）の基本ルールをまとめました。このアプリの対戦・デッキ作成の前提となる知識です。</p>
+  <div class="toc">
+    <a href="#goal">勝利条件</a><a href="#prepare">対戦の準備</a><a href="#turn">ターンの流れ</a>
+    <a href="#cards">カードの種類</a><a href="#energy">エネルギーとワザ</a><a href="#special">特殊状態</a><a href="#deck">デッキ構築</a>
+  </div>
+
+  <section id="goal">
+    <h3>🏆 勝利条件</h3>
+    <p>次のいずれかを最初に満たしたプレイヤーが勝ちです。</p>
+    <div class="win">
+      <ul>
+        <li><b>サイドを取り切る</b>：相手のポケモンをきぜつさせるたびに、自分のサイド（最初6枚）を1枚引く。サイドを全て取ると勝ち。</li>
+        <li><b>相手のバトル場・ベンチのポケモンが全ていなくなる</b>（場のポケモンが0になった相手の負け）。</li>
+        <li><b>相手が山札を引けない</b>：自分のターン開始時に山札からカードを引けないプレイヤーの負け。</li>
+      </ul>
+    </div>
+    <p class="note">※ ex・メガなど一部のポケモンは、きぜつさせると相手がサイドを<b>2枚</b>取れます。</p>
+  </section>
+
+  <section id="prepare">
+    <h3>🎴 対戦の準備</h3>
+    <ol>
+      <li>デッキ（60枚）をよく切り、<b>手札を7枚</b>引く。</li>
+      <li>手札に<b>たねポケモン</b>がなければ公開して引き直し（<b>マリガン</b>）。引き直すたび相手は手札を追加で引ける。</li>
+      <li>たねポケモン1枚を<b>バトル場</b>に、他のたねポケモンを<b>ベンチ（最大5体）</b>に出す。</li>
+      <li>山札の上から<b>6枚をサイド</b>として裏向きに置く。</li>
+      <li>先攻・後攻を決めて対戦開始（先攻の最初のターンはワザを使えない等のルールがあります）。</li>
+    </ol>
+  </section>
+
+  <section id="turn">
+    <h3>🔄 ターンの流れ</h3>
+    <p>自分のターンは次の順で進みます。</p>
+    <ol>
+      <li><b>山札から1枚引く</b>（引けなければ負け）。</li>
+      <li>以下を好きな順・回数で行う：
+        <ul>
+          <li>手札のたねポケモンをベンチに出す</li>
+          <li>ポケモンを<b>進化</b>させる（場に出した次のターン以降、同名の進化ライン）</li>
+          <li>エネルギーを手札から<b>1ターンに1枚</b>つける</li>
+          <li>トレーナーズ（グッズ・ポケモンのどうぐ・スタジアム・サポート）を使う<br><span class="note">※ サポートは1ターンに1枚、スタジアムも1ターンに1枚など制限あり</span></li>
+          <li>「にげる」でバトル場とベンチを入れ替える（必要なエネルギーをトラッシュ／1ターンに1回）</li>
+          <li>特性を使う</li>
+        </ul>
+      </li>
+      <li>最後に<b>ワザを1つ使って攻撃</b>（使うとターン終了）。先攻の最初のターンは攻撃できません。</li>
+    </ol>
+    <p>相手のポケモンのHPを<b>0</b>にすると<b>きぜつ</b>させ、サイドを取れます。</p>
+  </section>
+
+  <section id="cards">
+    <h3>🃏 カードの種類</h3>
+    <ul>
+      <li><span class="tag">ポケモン</span>たね／1進化／2進化。バトルやベンチで戦う。HP・ワザ・弱点・抵抗力・にげるコストを持つ。</li>
+      <li><span class="tag">グッズ</span>1ターンに何枚でも使える道具。使ったらトラッシュ。</li>
+      <li><span class="tag">ポケモンのどうぐ</span>ポケモンに付けて効果を発揮（1体に1枚）。</li>
+      <li><span class="tag">サポート</span>1ターンに1枚だけ使える強力なカード。</li>
+      <li><span class="tag">スタジアム</span>場に1枚出して両者に影響。新しいものを出すと前のは入れ替え。</li>
+      <li><span class="tag">エネルギー</span>基本エネルギー／特殊エネルギー。ワザを使うコスト。</li>
+    </ul>
+  </section>
+
+  <section id="energy">
+    <h3>⚡ エネルギーとワザ</h3>
+    <p>ワザには必要な<b>エネルギーの種類と数</b>が書かれています。その分のエネルギーがついていれば使えます。</p>
+    <ul>
+      <li>エネルギーは手札から<b>1ターンに1枚</b>、自分のポケモンにつけられる。</li>
+      <li><b>弱点</b>：相手が弱点タイプならダメージ増加（一般に×2）。</li>
+      <li><b>抵抗力</b>：相手が抵抗力タイプならダメージ軽減（一般に−30 など）。</li>
+      <li>ダメージはHPに対して蓄積し、HP以上になると<b>きぜつ</b>。</li>
+    </ul>
+  </section>
+
+  <section id="special">
+    <h3>🌀 特殊状態</h3>
+    <ul>
+      <li><b>どく</b>：ポケモンチェック（各ターン終了時）ごとにダメージ。</li>
+      <li><b>やけど</b>：チェックごとにダメージ＋コインで回復判定。</li>
+      <li><b>ねむり</b>：ワザ・にげるが使えない。チェックでコイン回復判定。</li>
+      <li><b>まひ</b>：次の自分のターン、ワザ・にげるが使えない（その後回復）。</li>
+      <li><b>こんらん</b>：ワザを使うときコイン判定に失敗すると自分にダメージ。</li>
+    </ul>
+    <p class="note">※ ベンチに下げる（入れ替える）と多くの特殊状態は回復します。</p>
+  </section>
+
+  <section id="deck">
+    <h3>🛠 デッキ構築</h3>
+    <ul>
+      <li>デッキは<b>ちょうど60枚</b>。</li>
+      <li>同じ名前のカードは<b>4枚まで</b>（基本エネルギーは枚数制限なし）。</li>
+      <li><b>たねポケモンを最低1枚</b>入れる（無いと対戦を始められません）。</li>
+      <li>ACE SPEC は<b>デッキに1枚</b>まで。</li>
+    </ul>
+    <p class="note">このアプリの「デッキ作成」では上記を自動チェックします。CSV（カードID 1行1枚）での読み込み・出力にも対応しています。</p>
+  </section>
+
+  <p class="note" style="text-align:center;margin:18px 0">本ページは対戦アプリ理解のための要点まとめです。詳細・最新の公式ルールは各自ご確認ください。</p>
+</div>
+{% endblock %}

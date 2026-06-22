@@ -7,16 +7,26 @@
 
 {% block head %}
 <style>
-  .deckGrid{display:grid;grid-template-columns:1fr;gap:14px;}
-  .deckTile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 4px 16px #0b346b0d;}
-  .deckTile h3{margin:0 0 2px;font-size:15px;color:var(--ink);}
-  .deckTile .desc{font-size:12px;color:var(--sub);margin-bottom:8px;min-height:16px;}
-  .deckTile .cards{display:flex;flex-wrap:wrap;gap:5px;}
-  .deckTile .sect{font-size:11px;color:var(--teal);font-weight:800;margin:18px 0 8px;}
-  .deckActions{display:flex;gap:8px;margin-top:10px;}
-  .deckActions button{font-size:12px;padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;cursor:pointer;}
-  .deckActions button:hover{background:#f1f7ff;}
-  .deckActions button.danger{color:#9b2a3a;border-color:#f0c4cb;}
+  /* デッキ一覧はカードを見せず「デッキボックス」だけ並べる。クリックで詳細。 */
+  .deckGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;}
+  .boxTile{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    min-height:130px;cursor:pointer;background:linear-gradient(180deg,#fbfdff,#eef4fb);border:1px solid var(--line);
+    border-radius:16px;padding:16px 10px;text-align:center;box-shadow:0 4px 16px #0b346b0d;transition:.15s;}
+  .boxTile:hover{transform:translateY(-3px);box-shadow:0 10px 24px #0b346b1f;border-color:var(--teal);}
+  .boxTile .box{font-size:42px;line-height:1;}
+  .boxTile .cover{width:70px;height:96px;object-fit:cover;border-radius:7px;box-shadow:0 3px 10px #0b346b33;border:1px solid #fff;}
+  .boxTile .nm{font-size:14px;font-weight:800;color:var(--ink);line-height:1.25;word-break:break-word;}
+  .boxTile .lock{position:absolute;top:8px;right:10px;font-size:14px;}
+  .boxTile.add .plus{font-size:46px;font-weight:300;color:var(--teal);line-height:1;}
+  .sect{font-size:13px;color:var(--teal);font-weight:800;margin:18px 0 8px;}
+  /* 詳細モーダル内 */
+  #modal .deckCards{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;max-height:54vh;overflow:auto;}
+  #modal .deckCards .miniCard{cursor:pointer;}
+  #modal .deckActions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+  #modal .deckActions button{font-size:13px;padding:7px 14px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;cursor:pointer;}
+  #modal .deckActions button.danger{color:#9b2a3a;border-color:#f0c4cb;}
+  .pwrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:#fff7e6;border:1px solid #f0e0a8;border-radius:10px;padding:10px;margin-top:10px;}
+  .pwrow input{border:1px solid var(--line);border-radius:8px;padding:7px;min-width:160px;}
 </style>
 {% endblock %}
 
@@ -38,98 +48,104 @@
 
 {% block script %}
 <script>
+let USER=[], AGENTS=[];
 function deckCardsHtml(cards){
   return (cards||[]).map(c=>{
     const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name||('ID'+c.id)}</div>`;
     return `<div class="miniCard" data-cid="${c.id}" title="${c.name||''}（ID:${c.id}）×${c.count}（クリックで詳細）">${inner}<div class="cnt">×${c.count}</div></div>`;
   }).join('');
 }
-function bindDeckCardClicks(root){
-  (root||document).querySelectorAll('.cards .miniCard[data-cid]').forEach(function(el){
-    const box=el.closest('.cards'); const list=[...box.querySelectorAll('.miniCard[data-cid]')].map(x=>+x.dataset.cid);
-    el.onclick=()=>showCardDetail(+el.dataset.cid, list, list.indexOf(+el.dataset.cid));
-  });
-}
-// 非公開デッキをパスワードで解錠して中身を表示する。
-async function unlockDeckInline(id, btn){
-  const pw=prompt('このデッキは非公開です。中身を見るにはパスワードを入力してください。');
-  if(pw===null)return;
-  const r=await post('/api/decks/'+encodeURIComponent(id)+'/unlock',{password:pw});
-  if(r.error){alert(r.error);return;}
-  const box=btn.closest('.deckTile').querySelector('.cards');
-  box.innerHTML=deckCardsHtml(r.cards); bindDeckCardClicks(btn.closest('.deckTile'));
-}
-function renderDecks(boxId, decks, opts){
-  const box=document.getElementById(boxId);
-  if(!decks||!decks.length){box.innerHTML='<div class="emptyNote">'+(opts.empty||'デッキがありません。')+'</div>';return;}
-  box.innerHTML=decks.map((d,i)=>{
-    let actions='';
-    if(opts.actions){actions=`<div class="deckActions">
-        <button onclick="location.href='/builder?edit=${d.id}'">編集</button>
-        <button onclick="dupDeck('${d.id}')">複製</button>
-        <button class="danger" onclick="delDeck('${d.id}', this)">削除</button>
-      </div>`;}
-    else if(opts.copyKind){const has=d.cards&&d.cards.length;actions=`<div class="deckActions">
-        <button ${has?'':'disabled'} onclick="copyDeck('${opts.copyKind}',${i})">自分のデッキに複製</button>
-        ${has?'':'<span class="hint">デッキ読取不可</span>'}
-      </div>`;}
-    const isPriv = d.private || d.visibility==='private';
-    const cardsBody = isPriv
-      ? `<div class="cards"></div><button type="button" class="gray" onclick="unlockDeckInline('${d.id}', this)">🔒 中身を見る（パスワード）</button>`
-      : `<div class="cards">${deckCardsHtml(d.cards)}</div>`;
-    return `<div class="deckTile" data-name="${(d.name||'').replace(/"/g,'')}">
-      <h3>${isPriv?'🔒 ':''}${d.name}</h3>
-      <div class="desc">${d.desc||(isPriv?'非公開デッキ':'')}</div>
-      ${cardsBody}
-      ${actions}
-    </div>`;
-  }).join('');
-  bindDeckCardClicks(box);
-}
-async function delDeck(id, btn){
-  const name=btn.closest('.deckTile').dataset.name||'このデッキ';
-  if(!confirm('「'+name+'」を削除しますか？'))return;
-  const res=await fetch('/api/user_decks/'+id,{method:'DELETE'});
-  const r=await res.json();
-  if(r.error){alert(r.error);return;}
-  location.reload();
-}
-async function dupDeck(id){
-  const d=await get('/api/user_decks/'+id);
-  if(d.error){alert(d.error);return;}
-  const cards=expandCards(d.cards);
-  const r=await post('/api/user_decks',{name:(d.name||'デッキ')+' のコピー',cards});
-  if(r.error){alert(r.error);return;}
-  location.reload();
+function bindModalCards(){
+  const box=document.querySelector('#modal .deckCards'); if(!box)return;
+  const els=[...box.querySelectorAll('.miniCard[data-cid]')]; const list=els.map(e=>+e.dataset.cid);
+  els.forEach((el,i)=>el.onclick=()=>showCardDetail(+el.dataset.cid, list, i));
 }
 function expandCards(cards){const out=[];(cards||[]).forEach(c=>{for(let i=0;i<(c.count||0);i++)out.push(c.id);});return out;}
-async function copyDeck(kind, idx){
-  const d=kind==='sample'?(CFG.sampleDecks||[])[idx]:(CFG.agents||[])[idx];
-  if(!d){alert('デッキが見つかりません。');return;}
-  const cards=expandCards(d.cards);
-  if(!cards.length){alert('このデッキはカード情報が読めないため複製できません。');return;}
-  const r=await post('/api/user_decks',{name:(d.name||'デッキ')+' のコピー',cards});
-  if(r.error){alert('複製できません: '+r.error);return;}
-  location.reload();
+
+// デッキ（ボックス）クリック→詳細モーダル
+function openUserDeck(d){
+  const priv=d.private||d.visibility==='private';
+  const body=priv
+    ? `<div class="pwrow">🔒 非公開デッキ <input type="password" class="dkpw" placeholder="パスワード"><button type="button" class="gray" id="unlockBtn">表示</button><span class="pwmsg hint"></span></div><div class="deckCards"></div>`
+    : `<div class="deckCards">${deckCardsHtml(d.cards)}</div>`;
+  document.getElementById('modal').innerHTML=`<h3>${priv?'🔒 ':''}${d.name}</h3>${body}
+    <div class="deckActions">
+      <button onclick="location.href='/builder?edit=${d.id}'">編集</button>
+      <button id="dupBtn">複製</button>
+      <button class="danger" id="delBtn">削除</button>
+      <button class="gray" onclick="closeModal()">閉じる</button>
+    </div>`;
+  showModal();
+  if(priv){
+    const inp=document.querySelector('#modal .dkpw'), msg=document.querySelector('#modal .pwmsg');
+    document.getElementById('unlockBtn').onclick=async()=>{
+      const r=await post('/api/decks/'+encodeURIComponent(d.id)+'/unlock',{password:inp.value});
+      if(r.error){msg.textContent=r.error;return;}
+      document.querySelector('#modal .deckCards').innerHTML=deckCardsHtml(r.cards); bindModalCards();
+    };
+  }else bindModalCards();
+  document.getElementById('dupBtn').onclick=()=>dupDeck(d.id);
+  document.getElementById('delBtn').onclick=()=>delDeck(d.id, d.name);
+}
+function openAgentDeck(a, idx){
+  const has=a.cards&&a.cards.length;
+  const body=has?`<div class="deckCards">${deckCardsHtml(a.cards)}</div>`
+    :'<div class="hint">デッキはファイルから読み取れません（対戦開始時にAIが決定）。</div>';
+  document.getElementById('modal').innerHTML=`<h3>🤖 ${a.name}</h3>
+    <div style="color:var(--sub);font-size:12px">${a.deck_source||''}</div>${body}
+    <div class="deckActions"><button ${has?'':'disabled'} id="cpBtn">自分のデッキに複製</button>
+      <button class="gray" onclick="closeModal()">閉じる</button></div>`;
+  showModal(); if(has) bindModalCards();
+  const cp=document.getElementById('cpBtn'); if(cp&&has) cp.onclick=()=>copyAgentDeck(idx);
+}
+function coverImg(cards){
+  if(!cards||!cards.length) return null;
+  const poke=cards.find(c=>c.cardType==='POKEMON'&&c.img);
+  return (poke&&poke.img) || (cards.find(c=>c.img)||{}).img || null;
+}
+// 表紙はデッキ内の代表カード画像。無い/非公開はカード裏面を表紙にする。
+function tileInner(name, priv, cover){
+  const face = cover ? `<img class="cover" src="${cover}" alt="" loading="lazy">`
+                     : `<img class="cover" src="/card_back" alt="">`;
+  return `${priv?'<span class="lock">🔒</span>':''}${face}<div class="nm">${name}</div>`;
+}
+function renderDecks(boxId, decks){
+  USER=decks||[];
+  const box=document.getElementById(boxId);
+  let html=`<div class="boxTile add" id="addTile"><div class="plus">＋</div><div class="nm">新しいデッキ</div></div>`;
+  html+=USER.map((d,i)=>`<div class="boxTile" data-i="${i}">${tileInner(d.name,(d.private||d.visibility==='private'),coverImg(d.cards))}</div>`).join('');
+  box.innerHTML=html;
+  document.getElementById('addTile').onclick=()=>location.href='/builder';
+  box.querySelectorAll('.boxTile[data-i]').forEach(t=>t.onclick=()=>openUserDeck(USER[+t.dataset.i]));
 }
 function renderAgentDecks(agents){
+  AGENTS=agents||[];
   const box=document.getElementById('agentDecks');
-  if(!agents||!agents.length){box.innerHTML='<div class="emptyNote">登録AIがありません。「AIエージェント登録」から追加できます。</div>';return;}
-  box.innerHTML=agents.map((a,i)=>{
-    const has=a.cards&&a.cards.length;
-    const body=has?`<div class="cards">${deckCardsHtml(a.cards)}</div>`
-      :'<div class="hint">デッキはファイルから読み取れません（対戦開始時にAIが決定）。</div>';
-    const actions=`<div class="deckActions"><button ${has?'':'disabled'} onclick="copyDeck('agent',${i})">自分のデッキに複製</button>${has?'':'<span class="hint">複製不可</span>'}</div>`;
-    return `<div class="deckTile"><h3>🤖 ${a.name}</h3><div class="desc">${a.deck_source||''}</div>${body}${actions}</div>`;
-  }).join('');
-  bindDeckCardClicks(box);
+  if(!AGENTS.length){box.innerHTML='<div class="emptyNote">登録AIがありません。「AIエージェント登録」から追加できます。</div>';return;}
+  box.innerHTML=AGENTS.map((a,i)=>`<div class="boxTile" data-i="${i}">${tileInner(a.name,false,coverImg(a.cards))}</div>`).join('');
+  box.querySelectorAll('.boxTile[data-i]').forEach(t=>t.onclick=()=>openAgentDeck(AGENTS[+t.dataset.i], +t.dataset.i));
 }
-let CFG={sampleDecks:[],agents:[]};
+async function delDeck(id, name){
+  if(!confirm('「'+(name||'このデッキ')+'」を削除しますか？'))return;
+  const res=await fetch('/api/user_decks/'+id,{method:'DELETE'}); const r=await res.json();
+  if(r.error){alert(r.error);return;} location.reload();
+}
+async function dupDeck(id){
+  const d=await get('/api/user_decks/'+encodeURIComponent(id));
+  if(d.error){alert(d.private?'非公開デッキの複製にはパスワードが必要です（編集画面から行ってください）。':d.error);return;}
+  const r=await post('/api/user_decks',{name:(d.name||'デッキ')+' のコピー',cards:expandCards(d.cards)});
+  if(r.error){alert(r.error);return;} location.reload();
+}
+async function copyAgentDeck(idx){
+  const a=(AGENTS||[])[idx]; if(!a){alert('デッキが見つかりません。');return;}
+  const cards=expandCards(a.cards);
+  if(!cards.length){alert('このデッキはカード情報が読めないため複製できません。');return;}
+  const r=await post('/api/user_decks',{name:(a.name||'デッキ')+' のコピー',cards});
+  if(r.error){alert('複製できません: '+r.error);return;} location.reload();
+}
 // 保存済みデッキは軽量APIで先に描画（/api/config は登録AIプレビューが重い）。
-get('/api/decks').then(c=>{
-  renderDecks('userDecks', c.userDecks||[], {actions:true, empty:'保存済みデッキはまだありません。「＋ 新しいデッキを作成」から作れます。'});
-}).catch(()=>{document.getElementById('userDecks').innerHTML='<div class="emptyNote">読み込みに失敗しました。</div>';});
-// 登録AIのデッキは別途取得。
-get('/api/config').then(c=>{ CFG=c; renderAgentDecks(c.agents||[]); }).catch(()=>{});
+get('/api/decks').then(c=>renderDecks('userDecks', c.userDecks||[]))
+  .catch(()=>{document.getElementById('userDecks').innerHTML='<div class="emptyNote">読み込みに失敗しました。</div>';});
+get('/api/config').then(c=>renderAgentDecks(c.agents||[])).catch(()=>{});
 </script>
 {% endblock %}
