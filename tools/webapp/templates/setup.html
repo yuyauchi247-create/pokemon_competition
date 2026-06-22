@@ -46,7 +46,7 @@
             <option value="user">保存済みデッキ</option>
             <option value="agent">登録AIのデッキ</option>
           </select>
-          <select class="deckChoice" data-prefix="player"></select>
+          <div class="deckTiles" data-prefix="player"></div>
         </div>
         <div class="deckPreview" data-prefix="player"></div>
         <input type="hidden" name="deck_id" id="deckIdField">
@@ -69,12 +69,13 @@
             <option value="user">保存済みデッキ</option>
             <option value="agent">登録AIのデッキ</option>
           </select>
-          <select class="deckChoice" data-prefix="opponent"></select>
+          <div class="deckTiles" data-prefix="opponent"></div>
         </div>
         <div class="deckPreview" data-prefix="opponent"></div>
         <input type="hidden" name="opponent_deck_id" id="oppDeckIdField">
         <input type="hidden" name="opponent_user_deck_id" id="oppUserDeckIdField">
         <input type="hidden" name="opponent_deck_agent_id" id="oDeckAgentId">
+        <input type="hidden" name="opponent_deck_password" id="oppDeckPasswordField">
       </div>
     </div>
     {% elif mode == 'pvp' %}
@@ -91,12 +92,13 @@
           <option value="user">保存済みデッキ</option>
           <option value="agent">登録AIのデッキ</option>
         </select>
-        <select class="deckChoice" data-prefix="player"></select>
+        <div class="deckTiles" data-prefix="player"></div>
       </div>
       <div class="deckPreview" data-prefix="player"></div>
       <input type="hidden" name="deck_id" id="deckIdField">
       <input type="hidden" name="user_deck_id" id="userDeckIdField">
       <input type="hidden" name="deck_agent_id" id="pDeckAgentId">
+      <input type="hidden" name="deck_password" id="deckPasswordField">
     </div>
     <p class="pageLead">「部屋を作成」すると<strong>招待URL</strong>が発行されます。相手がそのURLから参加すると対戦が始まります。</p>
     {% else %}
@@ -107,13 +109,14 @@
           <option value="user">保存済みデッキ</option>
           <option value="agent">登録AIのデッキ</option>
         </select>
-        <select class="deckChoice" data-prefix="player"></select>
+        <div class="deckTiles" data-prefix="player"></div>
         <button type="button" class="gray" onclick="location.href='/builder'">デッキを作成</button>
       </div>
       <div class="deckPreview" data-prefix="player"></div>
       <input type="hidden" name="deck_id" id="deckIdField">
       <input type="hidden" name="user_deck_id" id="userDeckIdField">
       <input type="hidden" name="deck_agent_id" id="pDeckAgentId">
+      <input type="hidden" name="deck_password" id="deckPasswordField">
     </div>
     <div class="choice">
       <h3>相手AI</h3>
@@ -131,12 +134,13 @@
             <option value="user">保存済みデッキ</option>
             <option value="agent">登録AIのデッキ</option>
           </select>
-          <select class="deckChoice" data-prefix="opponent"></select>
+          <div class="deckTiles" data-prefix="opponent"></div>
         </div>
         <div class="deckPreview" data-prefix="opponent"></div>
         <input type="hidden" name="opponent_deck_id" id="oppDeckIdField">
         <input type="hidden" name="opponent_user_deck_id" id="oppUserDeckIdField">
         <input type="hidden" name="opponent_deck_agent_id" id="oDeckAgentId">
+        <input type="hidden" name="opponent_deck_password" id="oppDeckPasswordField">
       </div>
     </div>
     {% endif %}
@@ -158,8 +162,13 @@ function cardsHtml(cards){
   if(!cards||!cards.length)return '<div class="hint">デッキはファイルから読み取れません（対戦時にAIが決定）。</div>';
   return '<div class="deckCards">'+cards.map(c=>{
     const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name||('ID'+c.id)}</div>`;
-    return `<div class="miniCard" title="${c.name||''}×${c.count}">${inner}<div class="cnt">×${c.count}</div></div>`;
+    return `<div class="miniCard" data-cid="${c.id}" title="${c.name||''}×${c.count}（クリックで詳細）">${inner}<div class="cnt">×${c.count}</div></div>`;
   }).join('')+'</div>';
+}
+function bindCardDetail(container){
+  const els=[...container.querySelectorAll('.miniCard[data-cid]')];
+  const list=els.map(e=>+e.dataset.cid);
+  els.forEach((el,i)=>el.onclick=()=>showCardDetail(+el.dataset.cid, list, i));
 }
 function decksFor(type){
   if(type==='sample')return SAMPLE;
@@ -175,29 +184,45 @@ function setHidden(prefix,type,id){
   Object.values(HID[prefix]).forEach(fid=>{const e=document.getElementById(fid);if(e)e.value='';});
   if(type in HID[prefix]){const e=document.getElementById(HID[prefix][type]);if(e)e.value=id||'';}
 }
+const PWFIELD={player:'deckPasswordField',opponent:'oppDeckPasswordField'};
+function setDeckPw(prefix,v){const e=document.getElementById(PWFIELD[prefix]);if(e)e.value=v||'';}
 function initDeckPicker(prefix){
   const typeSel=document.querySelector(`.deckType[data-prefix="${prefix}"]`);
-  const choiceSel=document.querySelector(`.deckChoice[data-prefix="${prefix}"]`);
-  const prev=document.querySelector(`.deckPreview[data-prefix="${prefix}"]`);
-  if(!typeSel||!choiceSel)return;
-  function refreshChoices(){
+  const tiles=document.querySelector(`.deckTiles[data-prefix="${prefix}"]`);
+  const detail=document.querySelector(`.deckPreview[data-prefix="${prefix}"]`);
+  if(!typeSel||!tiles)return;
+  function showCards(cards){ detail.innerHTML=cardsHtml(cards); bindCardDetail(detail); }
+  function selectDeck(d){
+    if(!d||d.hasBasic===false)return;
+    setHidden(prefix,typeSel.value,d.id); setDeckPw(prefix,'');
+    tiles.querySelectorAll('.deckTile').forEach(t=>t.classList.toggle('sel',t.dataset.id===String(d.id)));
+    if(typeSel.value==='user' && d.private){
+      // 非公開: パスワードで解錠して中身表示。対戦用にパスワードを保持。
+      detail.innerHTML=`<div class="pwrow">🔒 非公開デッキ <input type="password" class="dkpw" placeholder="パスワード"><button type="button" class="gray unlockBtn">表示</button><span class="pwmsg hint"></span></div>`;
+      const inp=detail.querySelector('.dkpw'), msg=detail.querySelector('.pwmsg');
+      detail.querySelector('.unlockBtn').onclick=async()=>{
+        const r=await post('/api/decks/'+encodeURIComponent(d.id)+'/unlock',{password:inp.value});
+        if(r.error){msg.textContent=r.error;return;}
+        setDeckPw(prefix,inp.value);
+        const box=document.createElement('div'); detail.appendChild(box); showCards(r.cards);
+      };
+    }else{ showCards(d.cards); }
+  }
+  function refresh(){
     const type=typeSel.value;
-    if(type==='same'){choiceSel.style.display='none';prev.innerHTML='<small>相手は自分と同じデッキを使います。</small>';setHidden(prefix,type,'');return;}
-    choiceSel.style.display='';
+    if(type==='same'){tiles.style.display='none';detail.innerHTML='<small>相手は自分と同じデッキを使います。</small>';setHidden(prefix,type,'');setDeckPw(prefix,'');return;}
+    tiles.style.display='';
     const ds=decksFor(type);
-    choiceSel.innerHTML=ds.length?ds.map(d=>`<option value="${d.id}"${d.hasBasic===false?' disabled':''}>${d.name}${d.hasBasic===false?'（⚠たね無し・使用不可）':''}</option>`).join('')
-      :'<option value="">（デッキがありません）</option>';
-    applyChoice();
+    tiles.innerHTML=ds.length?ds.map(d=>{
+      const dis=d.hasBasic===false;
+      return `<div class="deckTile${dis?' disabled':''}" data-id="${d.id}">${d.private?'<span class="lock">🔒</span>':''}<div class="box">🃏</div><div class="dknm">${d.name}${dis?'<br><small>⚠たね無し</small>':''}</div></div>`;
+    }).join('') : '<div class="hint">デッキがありません。</div>';
+    tiles.querySelectorAll('.deckTile').forEach(t=>{const d=ds.find(x=>String(x.id)===t.dataset.id);t.onclick=()=>selectDeck(d);});
+    const first=ds.find(d=>d.hasBasic!==false);
+    if(first) selectDeck(first); else { setHidden(prefix,type,''); detail.innerHTML=''; }
   }
-  function applyChoice(){
-    const type=typeSel.value, id=choiceSel.value;
-    setHidden(prefix,type,id);
-    const d=decksFor(type).find(x=>x.id===id);
-    prev.innerHTML=d?cardsHtml(d.cards):'';
-  }
-  typeSel.addEventListener('change',refreshChoices);
-  choiceSel.addEventListener('change',applyChoice);
-  refreshChoices();
+  typeSel.addEventListener('change',refresh);
+  refresh();
 }
 
 function fillAgentSelects(){

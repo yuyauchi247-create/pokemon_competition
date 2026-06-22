@@ -37,6 +37,7 @@ from selection import (  # noqa: E402
     sample_deck_options, save_user_agent, save_user_deck,
     update_user_agent_deck, update_user_deck, delete_user_deck,
     validate_ai_picks, validate_deck_for_builder, deck_has_basic,
+    deck_is_private, check_deck_password,
 )
 from sim_env import (  # noqa: E402
     to_observation_class, battle_start, battle_select, battle_finish,
@@ -173,7 +174,8 @@ def _agent_deck_list(agent_id):
     return deck
 
 
-def _selected_deck(mode_field, sample_id_field, user_id_field, file_field, agent_id_field=None):
+def _selected_deck(mode_field, sample_id_field, user_id_field, file_field, agent_id_field=None,
+                   pw_field=None):
     """フォームのフィールド名群からデッキを選ぶ（自分・相手で共通利用）。
 
     mode: sample / user / custom / agent（登録AIのデッキを流用）。未指定や不明なら sample 扱い。
@@ -193,6 +195,11 @@ def _selected_deck(mode_field, sample_id_field, user_id_field, file_field, agent
         return deck, f"アップロードデッキ（{deck_name}）"
     if mode == "user":
         deck_id = request.form.get(user_id_field) or ""
+        # 非公開デッキは対戦に使う際もパスワードが必要。
+        if deck_is_private(deck_id):
+            pw = request.form.get(pw_field) if pw_field else ""
+            if not check_deck_password(deck_id, pw or ""):
+                raise SelectionError("非公開デッキです。正しいパスワードを入力してください。")
         label = next((d["name"] for d in list_user_decks() if d["id"] == deck_id), "保存済みデッキ")
         return read_user_deck(deck_id), label
     # サンプルデッキ: ID で5種から選ぶ（未指定なら先頭）
@@ -211,7 +218,7 @@ def _require_basic_deck(deck):
 
 def _selected_player_deck():
     deck, label = _selected_deck("deck_mode", "deck_id", "user_deck_id", "deck_file",
-                                 agent_id_field="deck_agent_id")
+                                 agent_id_field="deck_agent_id", pw_field="deck_password")
     _require_basic_deck(deck)
     return deck, label
 
@@ -340,7 +347,7 @@ def _selected_opponent(gid, default_deck):
             deck, deck_name = _selected_deck(
                 "opponent_deck_mode", "opponent_deck_id",
                 "opponent_user_deck_id", "opponent_deck_file",
-                agent_id_field="opponent_deck_agent_id",
+                agent_id_field="opponent_deck_agent_id", pw_field="opponent_deck_password",
             )
             _require_basic_deck(deck)
             return "rule", None, deck, f"ルールベースAI（{deck_name}）"
@@ -1164,15 +1171,18 @@ def _user_decks_payload():
     """保存済みデッキ一覧（カードプレビュー込み）。登録AIプレビューより軽い。"""
     user_decks = []
     for opt in list_user_decks():
+        private = opt.get("visibility") == "private"
         try:
             deck = read_user_deck(opt["id"])
-            cards = deck_card_counts(deck)
             has_basic = deck_has_basic(deck)
+            cards = None if private else _deck_preview(deck_card_counts(deck))
         except SelectionError:
-            cards = []
+            cards = None
             has_basic = True  # 読めない場合は従来通り（弾かない）
+        # 非公開デッキは名前だけ見せ、中身(cards)は隠す（解錠でのみ取得）。
         user_decks.append({"id": opt["id"], "name": opt["name"],
-                           "cards": _deck_preview(cards), "hasBasic": has_basic})
+                           "visibility": opt.get("visibility", "public"),
+                           "private": private, "cards": cards, "hasBasic": has_basic})
     return user_decks
 
 
@@ -1253,21 +1263,44 @@ def api_save_user_deck():
     try:
         name = str(payload.get("name", "保存デッキ"))
         deck = [int(v) for v in payload.get("cards", [])]
+        visibility = payload.get("visibility", "public")
+        password = str(payload.get("password", ""))
+        if visibility == "private" and not password:
+            raise SelectionError("非公開デッキにはパスワードを設定してください。")
         if not deck_has_basic(deck):
             raise SelectionError("たねポケモンを最低1枚入れてください。")
-        saved = save_user_deck(name, deck)
-        counts = deck_card_counts(read_user_deck(saved["id"]))
-        return jsonify({**saved, "cards": _deck_preview(counts)})
+        saved = save_user_deck(name, deck, visibility, password)
+        return jsonify(saved)
     except (SelectionError, ValueError, TypeError) as exc:
         return _selection_error(str(exc))
+
+
+@app.route("/api/decks/<deck_id>/unlock", methods=["POST"])
+def api_unlock_deck(deck_id):
+    """非公開デッキをパスワードで解錠し、中身（カードプレビュー）を返す。"""
+    pw = (request.get_json(silent=True) or {}).get("password", "")
+    try:
+        if not check_deck_password(deck_id, pw):
+            return jsonify({"error": "パスワードが違います。"}), 403
+        return jsonify({"cards": _deck_preview(deck_card_counts(read_user_deck(deck_id)))})
+    except SelectionError as exc:
+        return _selection_error(str(exc), status=404)
 
 
 @app.route("/api/user_decks/<deck_id>", methods=["GET"])
 def api_user_deck(deck_id):
     try:
+        # 非公開デッキは中身の取得（編集含む）にパスワードが必要。
+        if deck_is_private(deck_id):
+            pw = request.args.get("password", "")
+            if not check_deck_password(deck_id, pw):
+                return jsonify({"error": "このデッキは非公開です。パスワードが必要です。",
+                                "private": True}), 403
         deck = read_user_deck(deck_id)
         opt = next((d for d in list_user_decks() if d["id"] == deck_id), {"id": deck_id, "name": deck_id})
-        return jsonify({"id": deck_id, "name": opt["name"], "cards": _deck_preview(deck_card_counts(deck))})
+        return jsonify({"id": deck_id, "name": opt["name"],
+                        "visibility": opt.get("visibility", "public"),
+                        "cards": _deck_preview(deck_card_counts(deck))})
     except SelectionError as exc:
         return _selection_error(str(exc), status=404)
 
@@ -1279,11 +1312,12 @@ def api_update_user_deck(deck_id):
     try:
         name = str(payload.get("name", "保存デッキ"))
         deck = [int(v) for v in payload.get("cards", [])]
+        visibility = payload.get("visibility")  # None なら既存維持
+        password = str(payload.get("password", ""))
         if not deck_has_basic(deck):
             raise SelectionError("たねポケモンを最低1枚入れてください。")
-        saved = update_user_deck(deck_id, name, deck)
-        counts = deck_card_counts(read_user_deck(saved["id"]))
-        return jsonify({**saved, "cards": _deck_preview(counts)})
+        saved = update_user_deck(deck_id, name, deck, visibility, password)
+        return jsonify(saved)
     except (SelectionError, ValueError, TypeError) as exc:
         return _selection_error(str(exc))
 
