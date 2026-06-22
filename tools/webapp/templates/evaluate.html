@@ -31,6 +31,11 @@
   .agentCard .cards{display:flex;flex-wrap:wrap;gap:4px;}
   .agentCard .selbadge{margin-left:auto;font-size:12px;color:var(--blue);font-weight:800;display:none;}
   .agentCard.sel .selbadge{display:inline;}
+  @media(max-width:640px){
+    .tbl th,.tbl td{padding:6px 7px;font-size:11px;}
+    .agentGrid{grid-template-columns:1fr;}
+    .scoreCard{padding:14px;gap:14px;} .scoreCard .big{font-size:34px;}
+  }
 </style>
 {% endblock %}
 

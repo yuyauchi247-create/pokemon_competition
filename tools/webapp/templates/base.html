@@ -198,6 +198,45 @@
   .listItem .acts{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;}
   .listItem button.danger{background:#fdecee;color:#c0344a;box-shadow:none;}
   .emptyNote{color:var(--sub);font-size:14px;padding:20px;text-align:center;border:1px dashed var(--line);border-radius:14px;}
+  /* ===== カード詳細モーダルの前後ナビ（‹ ›） ===== */
+  #modal{position:relative;}
+  .cardNav{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;line-height:1;
+    background:#fff;color:var(--teal);border:1px solid var(--line);box-shadow:0 3px 12px #0b346b2e;
+    z-index:3;padding:0;min-height:0;}
+  .cardNav:hover{filter:brightness(1.03);transform:translateY(-50%) scale(1.05);}
+  .cardNav.prev{left:-15px;} .cardNav.next{right:-15px;}
+  .cardNav:disabled{opacity:.3;cursor:default;}
+  /* ===== モバイル共通（スマホ最適化） ===== */
+  @media(max-width:640px){
+    header{flex-wrap:wrap;gap:8px;padding:10px 12px;}
+    header h1{font-size:15px;}
+    header .meta{font-size:11px;}
+    button{padding:11px 16px;min-height:44px;}
+    .wrap{padding:10px;gap:10px;}
+    .panel{padding:10px 12px;border-radius:14px;}
+    .page{margin:14px auto;padding:0 12px;}
+    .page h2.pageTitle{font-size:20px;}
+    .page p.pageLead{font-size:13px;}
+    .menuGrid{grid-template-columns:1fr 1fr;gap:10px;}
+    .menuCard{padding:18px 10px;border-radius:14px;}
+    .menuCard .ico{font-size:34px;} .menuCard .ttl{font-size:15px;}
+    .listGrid{grid-template-columns:1fr;}
+    .opt{padding:12px 16px;}
+    input[type=text],input[type=number],input[type=file],select,textarea{max-width:100%;}
+    .setup,.builder{padding:0 12px;}
+    .setup h2,.builder h2{font-size:19px;}
+    .setup .hero,.builder .hero{padding:14px;}
+    /* 詳細モーダルをほぼ全幅・縦スクロール可に */
+    #modal{width:94%;max-width:none;max-height:88vh;overflow:auto;padding:16px 14px;}
+    #modal h3{font-size:17px;} #modal .cardimg{width:180px;max-width:58%;}
+    .cardNav{width:40px;height:40px;font-size:22px;}
+    .cardNav.prev{left:2px;} .cardNav.next{right:2px;}
+  }
+  @media(max-width:400px){
+    .menuGrid{grid-template-columns:1fr;}
+    header h1{font-size:14px;}
+  }
 </style>
 {% block head %}{% endblock %}
 </head>
@@ -218,9 +257,43 @@ const ICON={GRASS:'🍃',FIRE:'🔥',WATER:'💧',LIGHTNING:'⚡',PSYCHIC:'🔮'
 async function post(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});return r.json();}
 async function postForm(u,formData){const r=await fetch(u,{method:'POST',body:formData});return r.json();}
 async function get(u){const r=await fetch(u);return r.json();}
-function showModal(){document.getElementById('overlay').style.display='flex';}
-function closeModal(){document.getElementById('overlay').style.display='none';}
+/* カード詳細モーダルの前後ナビ。各画面が setModalNav(prevFn,nextFn) で登録する。
+   prev/next は「隣のカードを開く関数」or null（端）。null を渡すと矢印は出ない。 */
+let _modalNav=null;
+function setModalNav(prev,next){
+  _modalNav={prev,next};
+  const m=document.getElementById('modal');
+  m.querySelectorAll('.cardNav').forEach(b=>b.remove());
+  if(prev||next){
+    const mk=(cls,txt,fn)=>{const b=document.createElement('button');b.type='button';
+      b.className='cardNav '+cls;b.textContent=txt;
+      if(fn){b.onclick=fn;}else{b.disabled=true;}m.appendChild(b);};
+    mk('prev','‹',prev); mk('next','›',next);
+  }
+}
+function showModal(){_modalNav=null;document.getElementById('overlay').style.display='flex';}
+function closeModal(){document.getElementById('overlay').style.display='none';_modalNav=null;}
 document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')closeModal();};
+/* キーボード ← → でカード遷移、Esc で閉じる */
+document.addEventListener('keydown',e=>{
+  if(document.getElementById('overlay').style.display!=='flex')return;
+  if(e.key==='Escape'){closeModal();return;}
+  if(!_modalNav)return;
+  if(e.key==='ArrowLeft'&&_modalNav.prev){e.preventDefault();_modalNav.prev();}
+  else if(e.key==='ArrowRight'&&_modalNav.next){e.preventDefault();_modalNav.next();}
+});
+/* スワイプ（左右フリック）でカード遷移 */
+(function(){
+  let sx=null,sy=null;const ov=document.getElementById('overlay');
+  ov.addEventListener('touchstart',e=>{const t=e.changedTouches[0];sx=t.clientX;sy=t.clientY;},{passive:true});
+  ov.addEventListener('touchend',e=>{
+    if(sx==null||!_modalNav)return;const t=e.changedTouches[0];
+    const dx=t.clientX-sx,dy=t.clientY-sy;sx=null;
+    if(Math.abs(dx)<48||Math.abs(dx)<Math.abs(dy))return;  // 横移動が小さい/縦スクロールは無視
+    if(dx>0&&_modalNav.prev)_modalNav.prev();
+    else if(dx<0&&_modalNav.next)_modalNav.next();
+  },{passive:true});
+})();
 </script>
 {% block script %}{% endblock %}
 </body>

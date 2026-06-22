@@ -54,6 +54,23 @@
   .handzone{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;margin-top:12px;}
   .handlabel{font-size:12px;color:var(--sub);font-weight:700;margin:0 0 8px;}
   .handlabel.opp{margin-top:12px;}
+  /* ===== スマホ最適化 ===== */
+  @media(max-width:640px){
+    .replayWrap{padding:0 8px;gap:10px;}
+    .logListPanel{max-height:40vh;}
+    .playmat{--bcard:52px;padding:9px;gap:6px;
+      grid-template-columns:minmax(58px,.7fr) minmax(0,2fr) minmax(58px,.7fr);}
+    .playmat::before{width:108px;height:108px;border-width:7px;}
+    .zone-bench{gap:5px;min-height:calc(var(--bcard)*1.4);}
+    .pile{min-width:42px;padding:5px 6px;} .pile .pcount{font-size:14px;}
+    .prizegrid{gap:2px;} .prizeback{width:15px;height:21px;}
+    .midline{font-size:10px;letter-spacing:.1em;}
+    .repControls{gap:8px;padding:10px;} .repLog{height:160px;}
+  }
+  @media(max-width:380px){
+    .playmat{--bcard:46px;
+      grid-template-columns:minmax(52px,.7fr) minmax(0,2fr) minmax(52px,.7fr);}
+  }
 </style>
 {% endblock %}
 

@@ -120,6 +120,31 @@
   .discardGrid img{width:60px;border-radius:5px;}
   .discardGrid .ph{width:60px;height:82px;background:#eef2f7;border-radius:5px;font-size:9px;display:flex;align-items:center;justify-content:center;text-align:center;color:#789;}
   @media(max-width:980px){ #log{height:320px;} }
+  /* ===== スマホ最適化：プレイマットを縮小して横はみ出し/見切れを防ぐ ===== */
+  @media(max-width:640px){
+    .battle{padding:0 8px;margin:10px auto;gap:10px;}
+    .playmat{--bcard:52px;padding:9px;gap:6px;
+      grid-template-columns:minmax(58px,.7fr) minmax(0,2fr) minmax(58px,.7fr);}
+    .playmat::before{width:108px;height:108px;border-width:7px;}
+    .playmat::after{width:22px;height:22px;border-width:6px;}
+    .zone-bench{gap:5px;min-height:calc(var(--bcard)*1.4);}
+    .pile{min-width:42px;padding:5px 6px;}
+    .pile .pcount{font-size:14px;} .pile .plabel{font-size:9px;}
+    .prizegrid{gap:2px;} .prizeback{width:15px;height:21px;}
+    .midline{font-size:10px;letter-spacing:.1em;}
+    .handzone{padding:10px;}
+    .handzone .pcard,.handzone .pcard.imgcard{width:84px;}
+    .handprompt{font-size:14px;padding:8px 12px;}
+    .optcard .pcard,.optcard .pcard.imgcard{width:78px;}
+    .optcard .backimg{width:78px;height:108px;}
+    #log{height:240px;}
+    .aiControls{gap:10px;padding:11px;}
+  }
+  @media(max-width:380px){
+    .playmat{--bcard:46px;
+      grid-template-columns:minmax(52px,.7fr) minmax(0,2fr) minmax(52px,.7fr);}
+    .handzone .pcard,.handzone .pcard.imgcard{width:76px;}
+  }
 </style>
 {% endblock %}
 
@@ -478,14 +503,19 @@ function renderBanner(){
 
 /* ---------- クリック→詳細＋操作モーダル ---------- */
 function bindClicks(){
-  document.querySelectorAll('#youHand .pcard[data-cid]').forEach(el=>{
-    el.addEventListener('click',()=>{if(busy)return;
-      openCard(+el.dataset.cid,handActions(+el.dataset.hand).map(a=>({label:a.label,onclick:()=>chooseCard(a.index)})));});});
-  document.querySelectorAll('#youActive .pcard[data-cid],#youBench .pcard[data-cid]').forEach(el=>{
-    el.addEventListener('click',()=>{if(busy)return;
-      openCard(+el.dataset.cid,boardActions(+el.dataset.area,+el.dataset.pos).map(a=>({label:a.label,onclick:()=>chooseCard(a.index)})));});});
-  document.querySelectorAll('#oppActive .pcard[data-cid],#oppBench .pcard[data-cid],#oppHand .pcard[data-cid]').forEach(el=>{
-    el.addEventListener('click',()=>{if(busy)return;openCard(+el.dataset.cid,[]);});});
+  // ゾーンごとに「隣接カードのリスト」を作り、詳細モーダルで ‹ › 遷移できるようにする。
+  const bindGroup=(sel,actionsOf)=>{
+    const els=[...document.querySelectorAll(sel)];
+    const list=els.map(el=>({cid:+el.dataset.cid,actions:actionsOf(el)}));
+    els.forEach((el,i)=>el.addEventListener('click',()=>{if(busy)return;
+      openCard(list[i].cid,list[i].actions,{list,idx:i});}));
+  };
+  bindGroup('#youHand .pcard[data-cid]',
+    el=>handActions(+el.dataset.hand).map(a=>({label:a.label,onclick:()=>chooseCard(a.index)})));
+  bindGroup('#youActive .pcard[data-cid],#youBench .pcard[data-cid]',
+    el=>boardActions(+el.dataset.area,+el.dataset.pos).map(a=>({label:a.label,onclick:()=>chooseCard(a.index)})));
+  bindGroup('#oppActive .pcard[data-cid],#oppBench .pcard[data-cid],#oppHand .pcard[data-cid]',
+    ()=>[]);
   document.querySelectorAll('.pile[data-who]').forEach(b=>b.onclick=()=>showDiscard(b.dataset.who));
 }
 function showDiscard(who){
@@ -497,7 +527,7 @@ function showDiscard(who){
     <div class="acts"><button class="gray" onclick="closeModal()">閉じる</button></div>`;
   showModal();
 }
-async function openCard(cid,actions){
+async function openCard(cid,actions,nav){
   const c=await get('/api/card/'+cid); const t=c.type||'COLORLESS';
   const atkMap=attackOptionMap();
   const mv=(c.moves||[]).map(m=>{
@@ -538,6 +568,12 @@ async function openCard(cid,actions){
   document.querySelectorAll('#modal button.mvatk:not([disabled])').forEach(btn=>{
     btn.onclick=()=>confirmAction(`「${btn.dataset.nm}」で攻撃する`,[+btn.dataset.idx]);});
   showModal();
+  // 同じゾーン内の隣のカードへ ‹ › / ←→ / スワイプ で遷移
+  if(nav&&nav.list&&nav.list.length>1){
+    const i=nav.idx, L=nav.list;
+    const go=k=>()=>openCard(L[k].cid,L[k].actions,{list:L,idx:k});
+    setModalNav(i>0?go(i-1):null, i<L.length-1?go(i+1):null);
+  }
 }
 function confirmAction(text,p){
   document.getElementById('modal').innerHTML=`<h3>確認</h3>

@@ -75,9 +75,10 @@ function renderCardLibrary(){
     const stat=c.hp?`<div class="cid">HP${c.hp}${c.maxDamage?` ⚔${c.maxDamage}`:''}</div>`:'';
     return `<div class="libCard${maxed?' disabled':''}" data-id="${c.id}" title="${c.name} ID:${c.id}">${inner}<div class="cid">ID:${c.id}</div>${stat}${have}<div class="nm">${c.name}</div></div>`;
   }).join('')||'<div class="hint">該当カードがありません</div>';
-  document.querySelectorAll('#cardLibrary .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id));
+  const libIds=cards.map(c=>c.id);
+  document.querySelectorAll('#cardLibrary .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id,false,libIds));
 }
-async function openBuilderCard(cid, readonly){
+async function openBuilderCard(cid, readonly, list){
   const c=await get('/api/card/'+cid);
   const t=c.type||'COLORLESS';
   const counts=deckCounts();
@@ -122,10 +123,17 @@ async function openBuilderCard(cid, readonly){
       <button class="gray" onclick="closeModal()">閉じる</button>
     </div>`;
   const inc=document.getElementById('modalIncBtn');
-  if(inc&&!addDisabled) inc.onclick=()=>{addCard(cid);openBuilderCard(cid, readonly);};
+  if(inc&&!addDisabled) inc.onclick=()=>{addCard(cid);openBuilderCard(cid, readonly, list);};
   const dec=document.getElementById('modalDecBtn');
-  if(dec&&cnt>0) dec.onclick=()=>{removeCard(cid);openBuilderCard(cid, readonly);};
+  if(dec&&cnt>0) dec.onclick=()=>{removeCard(cid);openBuilderCard(cid, readonly, list);};
   showModal();
+  // 一覧の隣のカードへ ‹ › / ←→ / スワイプ で遷移
+  if(list&&list.length>1){
+    const i=list.indexOf(cid);
+    if(i>=0) setModalNav(
+      i>0?()=>openBuilderCard(list[i-1],readonly,list):null,
+      i<list.length-1?()=>openBuilderCard(list[i+1],readonly,list):null);
+  }
 }
 function addCard(id){
   if(CURRENT_DECK.length>=60){builderMessage('60枚を超えて追加できません。');return;}
@@ -151,7 +159,7 @@ function renderBuilderDeck(){
     const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name}</div>`;
     return `<div class="libCard" data-id="${id}" title="${c.name} ×${counts[id]}（クリックで1枚減らす）">${inner}<div class="cid">ID:${id}</div><div class="have">×${counts[id]}</div><div class="nm">${c.name}</div></div>`;
   }).join('')||'<div class="hint">右のカード一覧からクリックして追加してください。</div>';
-  document.querySelectorAll('#builderDeck .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id));
+  document.querySelectorAll('#builderDeck .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id,false,ids));
 }
 function builderMessage(msg){document.getElementById('builderMsg').textContent=msg||'';}
 async function saveBuilderDeck(){
@@ -202,7 +210,8 @@ function renderHand(){
     const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name}</div>`;
     return `<div class="libCard" data-id="${id}" title="${c.name}">${inner}<div class="nm">${c.name}</div></div>`;
   }).join('');
-  document.querySelectorAll('#testHand .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id, true));
+  const handIds=HAND.slice();
+  document.querySelectorAll('#testHand .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id, true, handIds));
 }
 function drawOpening(){
   if(!CURRENT_DECK.length){document.getElementById('handInfo').textContent='デッキにカードがありません。';return;}
