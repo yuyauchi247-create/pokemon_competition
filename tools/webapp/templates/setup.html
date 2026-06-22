@@ -79,6 +79,12 @@
     </div>
     {% elif mode == 'pvp' %}
     <div class="choice">
+      <h3>ニックネーム</h3>
+      <input type="text" name="nickname" maxlength="20" placeholder="対戦相手に表示される名前（例: たろう）"
+             style="border:1px solid var(--line);border-radius:10px;padding:9px;width:100%;max-width:320px">
+      <small style="display:block;color:var(--sub);margin-top:4px">相手にはこのニックネームのみ表示され、使用デッキは知られません。</small>
+    </div>
+    <div class="choice">
       <h3>あなたのデッキ</h3>
       <div class="deckRow">
         <select class="deckType" data-prefix="player" name="deck_mode">

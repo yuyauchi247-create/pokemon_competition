@@ -1478,8 +1478,10 @@ def api_new():
         g["status"] = "waiting"
         g["slots"] = {token: 0}
         g["decks"] = [host_deck, None]
-        g["labels"] = {0: f"プレイヤー1（{host_label}）"}
-        g["host_deck_label"] = host_label
+        # 人vs人: 相手にデッキを知られないよう、ラベルは「ニックネーム」のみ（デッキ名は出さない）。
+        nick = (request.form.get("nickname") or "").strip()[:20] or "プレイヤー1"
+        g["labels"] = {0: nick}
+        g["host_name"] = nick   # ロビー表示用（デッキ名は出さない）
         g["deck_label"] = "オンライン対戦"
         g["created_at"] = datetime.now(timezone.utc).isoformat()
         GAMES[gid] = g
@@ -1536,7 +1538,7 @@ def api_join():
     token = uuid.uuid4().hex
     g["slots"][token] = 1
     g["decks"][1] = guest_deck
-    g["labels"][1] = f"プレイヤー2（{guest_label}）"
+    g["labels"][1] = (request.form.get("nickname") or "").strip()[:20] or "プレイヤー2"
     _activate(g)
     obs, start = battle_start(g["decks"][0], g["decks"][1])
     if obs is None:
@@ -1574,7 +1576,7 @@ def api_rooms():
                 age_sec = None
         if age_sec is not None and age_sec > 3600:
             continue
-        rooms.append({"gid": gid, "host": g.get("host_deck_label") or "プレイヤー1",
+        rooms.append({"gid": gid, "host": g.get("host_name") or "プレイヤー1",
                       "ageSec": age_sec})
     rooms.sort(key=lambda r: (r["ageSec"] is None, r["ageSec"] or 0))
     return jsonify({"rooms": rooms})

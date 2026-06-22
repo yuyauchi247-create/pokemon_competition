@@ -8,6 +8,12 @@
     <p>招待された対戦に、あなたのデッキで参加します。</p>
     <div id="roomInfo" class="hint" style="margin-bottom:10px"></div>
     <div class="choice">
+      <h3>ニックネーム</h3>
+      <input type="text" name="nickname" maxlength="20" placeholder="対戦相手に表示される名前（例: はなこ）"
+             style="border:1px solid var(--line);border-radius:10px;padding:9px;width:100%;max-width:320px">
+      <small style="display:block;color:var(--sub);margin-top:4px">相手にはこのニックネームのみ表示され、使用デッキは知られません。</small>
+    </div>
+    <div class="choice">
       <h3>あなたのデッキ</h3>
       <label><input type="radio" name="deck_mode" value="user" checked> 保存済みデッキから選ぶ</label>
       <div id="userDeckList" class="deckList"></div>
