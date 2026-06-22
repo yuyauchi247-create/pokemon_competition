@@ -32,5 +32,40 @@
       <div class="sub">勝率上位5体に5位→1位の順で挑戦。全制覇で殿堂入り</div>
     </a>
   </div>
+
+  <!-- 募集中のオンライン対戦（URL配布なしでここから参加できる） -->
+  <div class="pageHead" style="margin-top:28px">
+    <h2 class="pageTitle" style="font-size:18px">👥 募集中のオンライン対戦</h2>
+    <button type="button" class="gray" id="refreshRooms">更新</button>
+  </div>
+  <p class="pageLead" style="margin-top:-6px">他の人が作成して相手を待っている部屋です。「参加する」でそのまま対戦に入れます。</p>
+  <div id="roomsList" class="listGrid"><div class="emptyNote">読み込み中…</div></div>
 </div>
+{% endblock %}
+
+{% block script %}
+<script>
+function fmtAge(s){
+  if(s==null)return '';
+  if(s<60)return `${s}秒前`;
+  if(s<3600)return `${Math.floor(s/60)}分前`;
+  return `${Math.floor(s/3600)}時間前`;
+}
+async function loadRooms(){
+  const box=document.getElementById('roomsList');
+  let data; try{ data=await get('/api/rooms'); }catch(e){ box.innerHTML='<div class="emptyNote">ルーム一覧を取得できませんでした。</div>'; return; }
+  const rooms=data.rooms||[];
+  if(!rooms.length){ box.innerHTML='<div class="emptyNote">現在、募集中の部屋はありません。「人 vs 人」から部屋を作成すると、ここに表示されて他の人が参加できます。</div>'; return; }
+  box.innerHTML=rooms.map(r=>`
+    <div class="listItem">
+      <h3>${r.host||'プレイヤー1'} の部屋</h3>
+      <div class="tag">作成: ${fmtAge(r.ageSec)}　ID: ${String(r.gid).slice(0,8)}…</div>
+      <div class="acts"><button type="button" onclick="location.href='/join?gid=${encodeURIComponent(r.gid)}'">参加する</button></div>
+    </div>`).join('');
+}
+document.getElementById('refreshRooms').onclick=loadRooms;
+loadRooms();
+let roomsTimer=setInterval(loadRooms, 5000);  // 自動更新
+window.addEventListener('beforeunload',()=>clearInterval(roomsTimer));
+</script>
 {% endblock %}

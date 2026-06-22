@@ -225,16 +225,24 @@ function syncAgentPick(prefix){
   showAgentDeck(prefix);
 }
 
-get('/api/config').then(c=>{
-  SAMPLE=c.sampleDecks||[]; USER=c.userDecks||[]; AGENTS=c.agents||[];
+// まず保存済みデッキだけを高速取得してプルダウンを即座に埋める
+// （/api/config は登録AIのプレビュー生成が重く、待つとデッキが選べない状態になる）。
+get('/api/decks').then(c=>{
+  SAMPLE=c.sampleDecks||[]; USER=c.userDecks||[];
   initDeckPicker('player');
   initDeckPicker('opponent');
+}).catch(()=>{});
+// 登録AI（相手AI選択・「登録AIのデッキ」用）は別途取得する。
+get('/api/config').then(c=>{
+  AGENTS=c.agents||[];
   fillAgentSelects();
   ['player','opponent'].forEach(p=>{
     document.querySelectorAll(`input[name="${p==='player'?'player_type':'opponent_type'}"]`).forEach(r=>r.addEventListener('change',()=>syncAgentPick(p)));
     if(document.querySelector(`.agentPick[data-prefix="${p}"]`)) syncAgentPick(p);
   });
-});
+  // 「登録AIのデッキ」を先に選んでいた場合に備えて選択肢を更新する。
+  document.querySelectorAll('.deckType').forEach(t=>{ if(t.value==='agent') t.dispatchEvent(new Event('change')); });
+}).catch(()=>{});
 
 document.getElementById('setupForm').onsubmit=async e=>{
   e.preventDefault();

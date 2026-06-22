@@ -316,8 +316,9 @@ function handleClearedParam(){
   get('/api/royale/refresh').then(s=>{if(s&&s.running){document.getElementById('refreshBtn').disabled=true;pollRefresh();}}).catch(()=>{});
   loadHof();
   try{
-    const [cfg,rank]=await Promise.all([get('/api/config'),get('/api/royale/ranking')]);
-    USER=cfg.userDecks||[]; AGENTS=cfg.agents||[];
+    // デッキは軽量APIで先に取得（/api/config は登録AIプレビューが重い）。
+    const [decks,rank]=await Promise.all([get('/api/decks'),get('/api/royale/ranking')]);
+    USER=decks.userDecks||[];
     LADDER=rank.ladder||[];                 // 強→弱 (rank1..5)
     STEPS=LADDER.slice().reverse();         // 弱→強（挑戦順, index0=第1戦）
     if(progress>STEPS.length) setProgress(STEPS.length);
@@ -325,6 +326,12 @@ function handleClearedParam(){
     initDeckPicker();
     renderLadder();
   }catch(e){setMsg('データの読み込みに失敗しました。');}
+  // 「登録AIのデッキ」用の一覧は別途取得し、必要なら選択肢を更新する。
+  get('/api/config').then(c=>{
+    AGENTS=c.agents||[];
+    const ts=document.getElementById('deckType');
+    if(ts&&ts.value==='agent') ts.dispatchEvent(new Event('change'));
+  }).catch(()=>{});
 })();
 </script>
 {% endblock %}
