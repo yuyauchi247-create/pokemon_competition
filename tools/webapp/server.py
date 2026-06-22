@@ -973,12 +973,22 @@ def api_log(name):
         abort(404)
 
 
+_AGENTS_CARDS_CACHE = {"sig": None, "data": None}
+
+
 def _agents_with_cards():
-    """登録AI一覧に、デッキのカード画像プレビューを付けて返す。"""
-    out = []
-    for a in list_user_agents():
-        cards = _deck_preview(a["deck"]) if a.get("deck") else None
-        out.append({**a, "cards": cards})
+    """登録AI一覧に、デッキのカード画像プレビューを付けて返す。
+
+    プレビュー生成(カードごとの card_meta)は登録AIが数十体あると重く、毎回作ると
+    /api/config が数秒かかる。登録AIの構成(id＋デッキ)が変わらない限りキャッシュを返し、
+    変化したら自動で作り直す（保存/削除/外部同期いずれも検知できる）。"""
+    metas = list_user_agents()
+    sig = tuple((a["id"], tuple(a.get("deck") or [])) for a in metas)
+    if _AGENTS_CARDS_CACHE["sig"] == sig and _AGENTS_CARDS_CACHE["data"] is not None:
+        return _AGENTS_CARDS_CACHE["data"]
+    out = [{**a, "cards": _deck_preview(a["deck"]) if a.get("deck") else None} for a in metas]
+    _AGENTS_CARDS_CACHE["sig"] = sig
+    _AGENTS_CARDS_CACHE["data"] = out
     return out
 
 
@@ -1032,12 +1042,8 @@ def api_delete_agent(agent_id):
         return _selection_error(str(exc), status=404)
 
 
-@app.route("/api/config", methods=["GET"])
-def api_config():
-    """保存済みデッキ・登録AIデッキ一覧（中身プレビュー込み）を返す。"""
-    # サンプルデッキはUIから非表示（内部フォールバックでのみ使用するため返さない）。
-    sample_decks = []
-
+def _user_decks_payload():
+    """保存済みデッキ一覧（カードプレビュー込み）。登録AIプレビューより軽い。"""
     user_decks = []
     for opt in list_user_decks():
         try:
@@ -1045,7 +1051,24 @@ def api_config():
         except SelectionError:
             cards = []
         user_decks.append({"id": opt["id"], "name": opt["name"], "cards": _deck_preview(cards)})
-    return jsonify({"sampleDecks": sample_decks, "userDecks": user_decks,
+    return user_decks
+
+
+@app.route("/api/decks", methods=["GET"])
+def api_decks():
+    """デッキ選択用の軽量エンドポイント。
+
+    /api/config は登録AI(数十体)のデッキプレビュー生成が重く数秒かかることがあり、
+    その間デッキ選択プルダウンが空になる。デッキ選択はAI一覧に依存しないので、
+    保存済みデッキだけを返す本エンドポイントで先に埋める。"""
+    # サンプルデッキはUIから非表示（内部フォールバックでのみ使用するため返さない）。
+    return jsonify({"sampleDecks": [], "userDecks": _user_decks_payload()})
+
+
+@app.route("/api/config", methods=["GET"])
+def api_config():
+    """保存済みデッキ・登録AIデッキ一覧（中身プレビュー込み）を返す。"""
+    return jsonify({"sampleDecks": [], "userDecks": _user_decks_payload(),
                     "agents": _agents_with_cards(), "allowUpload": ALLOW_AGENT_UPLOAD})
 
 
@@ -1316,7 +1339,9 @@ def api_new():
         g["slots"] = {token: 0}
         g["decks"] = [host_deck, None]
         g["labels"] = {0: f"プレイヤー1（{host_label}）"}
+        g["host_deck_label"] = host_label
         g["deck_label"] = "オンライン対戦"
+        g["created_at"] = datetime.now(timezone.utc).isoformat()
         GAMES[gid] = g
         _evict_if_needed()
         return jsonify({"gid": gid, "token": token, "role": "host", "status": "waiting"})
@@ -1382,6 +1407,34 @@ def api_join():
     except SelectionError as exc:
         return _selection_error(str(exc))
     return jsonify({"gid": g["gid"], "token": token, "role": "guest", "status": "playing"})
+
+
+@app.route("/api/rooms", methods=["GET"])
+def api_rooms():
+    """募集中（相手待ち）のオンライン対戦ルーム一覧。
+
+    URLを配らなくても、このロビーから直接参加できるようにするためのもの。
+    古すぎる放置ルーム（既定60分超）は除外して表示する。"""
+    now = datetime.now(timezone.utc)
+    rooms = []
+    for gid, g in GAMES.items():
+        if g.get("mode") != "pvp" or g.get("status") != "waiting":
+            continue
+        if (g.get("decks") or [None, None])[1] is not None:
+            continue
+        created = g.get("created_at")
+        age_sec = None
+        if created:
+            try:
+                age_sec = int((now - datetime.fromisoformat(created)).total_seconds())
+            except ValueError:
+                age_sec = None
+        if age_sec is not None and age_sec > 3600:
+            continue
+        rooms.append({"gid": gid, "host": g.get("host_deck_label") or "プレイヤー1",
+                      "ageSec": age_sec})
+    rooms.sort(key=lambda r: (r["ageSec"] is None, r["ageSec"] or 0))
+    return jsonify({"rooms": rooms})
 
 
 @app.route("/api/state", methods=["GET"])

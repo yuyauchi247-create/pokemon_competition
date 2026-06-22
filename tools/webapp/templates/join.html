@@ -75,13 +75,17 @@ document.getElementById('joinForm').onsubmit=async e=>{
 
 if(!GID){jmsg('対戦IDが指定されていません。招待URLから開いてください。');}
 else{document.getElementById('roomInfo').textContent='対戦ID: '+GID;}
-get('/api/config').then(c=>{
+// 保存済みデッキを高速取得して先に表示（/api/config は登録AIプレビューが重い）。
+get('/api/decks').then(c=>{
   renderDeckList('userDeckList', c.userDecks||[], 'juser', selectUserDeck);
+}).catch(()=>{document.getElementById('userDeckList').innerHTML='<small>デッキの読み込みに失敗しました。再読み込みしてください。</small>';});
+// 登録AIのデッキ選択肢は別途取得。
+get('/api/config').then(c=>{
   const deckAgents=(c.agents||[]).filter(a=>a.cards&&a.cards.length);
   const sel=document.getElementById('agentDeckSel');
   sel.innerHTML=deckAgents.length?deckAgents.map(a=>`<option value="${a.id}">${a.name}</option>`).join('')
     :'<option value="">（デッキを持つ登録AIがありません）</option>';
   sel.addEventListener('focus',()=>{const r=document.querySelector('input[name="deck_mode"][value="agent"]');if(r)r.checked=true;});
-});
+}).catch(()=>{});
 </script>
 {% endblock %}
