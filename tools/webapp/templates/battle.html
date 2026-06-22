@@ -128,6 +128,11 @@
   .trashStack img:not(:first-child),.trashStack .ph:not(:first-child){margin-left:-20px;}
   .trashStack .ph{background:#cfdbe8;}
   .trashEmpty{height:44px;display:flex;align-items:center;font-size:11px;color:#9fb0c4;}
+  /* 山札: 裏面カードを重ねてデッキの厚みを表現（中身は非公開なのでクリック無し） */
+  .deckPile .deckStack{position:relative;width:40px;height:50px;}
+  .deckStack .deckback{position:absolute;width:34px;border-radius:4px;border:1px solid #fff;box-shadow:0 1px 3px #0b346b40;}
+  .deckStack .deckcount{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:14px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.75);z-index:5;}
   /* 相手の手札（中身は伏せ、枚数ぶん裏面を表示） */
   #oppHand .handback{width:54px;border-radius:6px;display:inline-block;box-shadow:0 2px 6px #0b346b30;vertical-align:bottom;}
   #oppHand .handback:not(:first-child){margin-left:-22px;}  /* 少し重ねて省スペース */
@@ -374,10 +379,19 @@ function benchHtml(bench,interactive,glowSet,pickSet){
   if(!slots.length) slots.push('<div class="empty-c">ベンチなし</div>');
   return slots.join('');
 }
+function deckPileHtml(s){
+  const n=Math.max(0,s.deck||0);
+  if(!n) return `<div class="pile"><span class="pcount">0</span><span class="plabel">山札</span></div>`;
+  const layers=Math.min(5,Math.max(1,Math.round(n/10)));  // 枚数に応じて厚みを変える(1〜5層)
+  let stack='';
+  for(let i=0;i<layers;i++) stack+=`<img class="deckback" style="left:${i*2}px;top:${-i*2}px" src="/card_back" alt="" draggable="false">`;
+  return `<div class="pile deckPile" title="山札 ${n}枚">
+    <div class="deckStack">${stack}<span class="deckcount">${n}</span></div><span class="plabel">山札</span></div>`;
+}
 function sideHtml(s){
   const backs=Array.from({length:Math.max(0,s.prize)},()=>'<div class="prizeback"></div>').join('');
   return `<div class="sidebox"><div class="sblabel">サイド ${s.prize}</div><div class="prizegrid">${backs}</div></div>
-          <div class="pile"><span class="pcount">${s.deck}</span><span class="plabel">山札</span></div>`;
+          ${deckPileHtml(s)}`;
 }
 function pilesHtml(s,who){
   const cond=s.conditions&&s.conditions.length?`<div class="pile" style="border-color:#f0b4be"><span class="plabel" style="color:#e0556b">${s.conditions.join(' ')}</span></div>`:'';
