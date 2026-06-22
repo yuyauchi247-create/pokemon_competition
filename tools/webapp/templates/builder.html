@@ -15,6 +15,11 @@
       </div>
       <button type="button" id="closeBuilderBtn" class="gray">デッキ一覧へ戻る</button>
     </div>
+    <div class="csvImport" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 10px">
+      <span class="handLabel">📄 CSVから読み込み</span>
+      <input id="deckCsvFile" type="file" accept=".csv,text/csv" style="max-width:100%">
+      <span class="hint">カードID（1行1枚 / カンマ区切り）の60枚CSVを読み込み、下の作成中デッキに反映します。</span>
+    </div>
     <div class="builderTools">
       <input id="deckNameInput" type="text" placeholder="デッキ名（例: わたしの炎デッキ）">
       <input id="cardSearch" type="search" placeholder="カード名・IDで検索">
@@ -228,6 +233,21 @@ function drawOne(){
 document.getElementById('draw5Btn').onclick=drawOpening;
 document.getElementById('draw1Btn').onclick=drawOne;
 document.getElementById('handClearBtn').onclick=()=>{HAND=[];DRAWPILE=[];renderHand();};
+
+// CSVアップロードで作成中デッキに読み込む（サーバで解析・検証）。
+document.getElementById('deckCsvFile').onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  builderMessage('CSVを読み込み中…');
+  const fd=new FormData(); fd.append('deck_file', f);
+  let r; try{ r=await postForm('/api/decks/parse_csv', fd); }catch(err){ builderMessage('CSVの読み込みに失敗しました。'); e.target.value=''; return; }
+  if(r.error){ builderMessage(r.error); e.target.value=''; return; }
+  CURRENT_DECK=(r.cards||[]).map(Number);
+  const nameInput=document.getElementById('deckNameInput');
+  if(!nameInput.value.trim()) nameInput.value=f.name.replace(/\.csv$/i,'');
+  renderBuilderDeck(); renderCardLibrary();
+  builderMessage(`CSVから ${CURRENT_DECK.length} 枚を読み込みました。内容を確認して「このデッキを保存」で登録してください。`);
+  e.target.value='';
+};
 
 document.getElementById('cardLibrary').innerHTML='<div class="hint">カード一覧を読み込み中…</div>';
 get('/api/cards').then(d=>{ALL_CARDS=d.cards||[];renderCardLibrary();maybeLoadEdit();});

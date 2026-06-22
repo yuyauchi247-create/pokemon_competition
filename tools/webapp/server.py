@@ -1111,6 +1111,20 @@ def api_cards():
     return jsonify({"cards": cards})
 
 
+@app.route("/api/decks/parse_csv", methods=["POST"])
+def api_parse_deck_csv():
+    """デッキCSVをアップロードして60枚のカードID列に変換する（デッキ作成画面の読み込み用）。
+
+    ID1枚/行・カンマ区切りどちらも可（parse_deck_csv_text が吸収）。検証も同時に行う。"""
+    try:
+        text = _decode_upload(request.files.get("deck_file"), "デッキCSV")
+        deck = parse_deck_csv_text(text)
+        validate_deck_for_builder(deck)
+        return jsonify({"cards": deck})
+    except SelectionError as exc:
+        return _selection_error(str(exc))
+
+
 @app.route("/api/user_decks", methods=["POST"])
 def api_save_user_deck():
     payload = request.json or {}
