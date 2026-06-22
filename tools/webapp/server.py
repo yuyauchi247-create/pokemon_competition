@@ -26,7 +26,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from flask import (Flask, jsonify, request, render_template,  # noqa: E402
-                   send_from_directory, abort)
+                   send_from_directory, abort, Response)
+from urllib.parse import quote  # noqa: E402
 from selection import (  # noqa: E402
     DEFAULT_SAMPLE_DECK, SAMPLE_DECKS, SelectionError, deck_card_counts,
     delete_user_agent, extract_agent_code_from_ipynb, list_user_agents,
@@ -1094,6 +1095,24 @@ def _agents_with_cards():
 @app.route("/api/agents", methods=["GET"])
 def api_agents():
     return jsonify({"agents": _agents_with_cards()})
+
+
+@app.route("/api/agents/<agent_id>/download", methods=["GET"])
+def api_download_agent(agent_id):
+    """登録AIのコード(main.py)をダウンロードさせる。
+
+    .ipynb で登録されたものも、保存時に抽出済みの Python コード(main.py)を返す。"""
+    try:
+        code = read_user_agent_code(agent_id)
+    except (SelectionError, OSError):
+        abort(404)
+    meta = next((a for a in list_user_agents() if a["id"] == agent_id), None)
+    base = (meta and (meta.get("name") or meta.get("filename"))) or agent_id
+    base = base.rsplit(".", 1)[0]  # 拡張子を除く
+    fname = quote(f"{base}.py")    # 日本語名でも壊れないよう RFC5987 でエンコード
+    return Response(code, mimetype="text/x-python",
+                    headers={"Content-Disposition":
+                             f"attachment; filename=\"agent.py\"; filename*=UTF-8''{fname}"})
 
 
 @app.route("/api/agents/preview", methods=["POST"])

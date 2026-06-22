@@ -43,8 +43,14 @@ function renderAgents(agents){
     <div class="listItem">
       <h3>🤖 ${a.name}</h3>
       <div class="tag">${a.filename||''}<br>デッキ: ${a.deck_source||'-'}</div>
-      <div class="acts"><button class="danger" data-id="${a.id}">削除</button></div>
+      <div class="acts">
+        <button class="gray" data-dl="${a.id}">⬇ コードをダウンロード</button>
+        <button class="danger" data-id="${a.id}">削除</button>
+      </div>
     </div>`).join('');
+  box.querySelectorAll('button[data-dl]').forEach(b=>b.onclick=()=>{
+    location.href='/api/agents/'+encodeURIComponent(b.dataset.dl)+'/download';
+  });
   box.querySelectorAll('button.danger').forEach(b=>b.onclick=async()=>{
     if(!confirm('このエージェントを削除しますか？'))return;
     const r=await fetch('/api/agents/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});
