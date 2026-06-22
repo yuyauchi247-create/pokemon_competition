@@ -805,6 +805,11 @@ def guide():
     return render_template("guide.html")
 
 
+@app.route("/rules")
+def rules():
+    return render_template("rules.html")
+
+
 @app.route("/royale")
 def royale():
     return render_template("royale.html")

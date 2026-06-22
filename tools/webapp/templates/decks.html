@@ -14,6 +14,7 @@
     border-radius:16px;padding:16px 10px;text-align:center;box-shadow:0 4px 16px #0b346b0d;transition:.15s;}
   .boxTile:hover{transform:translateY(-3px);box-shadow:0 10px 24px #0b346b1f;border-color:var(--teal);}
   .boxTile .box{font-size:42px;line-height:1;}
+  .boxTile .cover{width:70px;height:96px;object-fit:cover;border-radius:7px;box-shadow:0 3px 10px #0b346b33;border:1px solid #fff;}
   .boxTile .nm{font-size:14px;font-weight:800;color:var(--ink);line-height:1.25;word-break:break-word;}
   .boxTile .lock{position:absolute;top:8px;right:10px;font-size:14px;}
   .boxTile.add .plus{font-size:46px;font-weight:300;color:var(--teal);line-height:1;}
@@ -97,12 +98,22 @@ function openAgentDeck(a, idx){
   showModal(); if(has) bindModalCards();
   const cp=document.getElementById('cpBtn'); if(cp&&has) cp.onclick=()=>copyAgentDeck(idx);
 }
-function tileInner(name, priv, icon){ return `${priv?'<span class="lock">🔒</span>':''}<div class="box">${icon||'🃏'}</div><div class="nm">${name}</div>`; }
+function coverImg(cards){
+  if(!cards||!cards.length) return null;
+  const poke=cards.find(c=>c.cardType==='POKEMON'&&c.img);
+  return (poke&&poke.img) || (cards.find(c=>c.img)||{}).img || null;
+}
+// 表紙はデッキ内の代表カード画像。無い/非公開はカード裏面を表紙にする。
+function tileInner(name, priv, cover){
+  const face = cover ? `<img class="cover" src="${cover}" alt="" loading="lazy">`
+                     : `<img class="cover" src="/card_back" alt="">`;
+  return `${priv?'<span class="lock">🔒</span>':''}${face}<div class="nm">${name}</div>`;
+}
 function renderDecks(boxId, decks){
   USER=decks||[];
   const box=document.getElementById(boxId);
   let html=`<div class="boxTile add" id="addTile"><div class="plus">＋</div><div class="nm">新しいデッキ</div></div>`;
-  html+=USER.map((d,i)=>`<div class="boxTile" data-i="${i}">${tileInner(d.name,(d.private||d.visibility==='private'))}</div>`).join('');
+  html+=USER.map((d,i)=>`<div class="boxTile" data-i="${i}">${tileInner(d.name,(d.private||d.visibility==='private'),coverImg(d.cards))}</div>`).join('');
   box.innerHTML=html;
   document.getElementById('addTile').onclick=()=>location.href='/builder';
   box.querySelectorAll('.boxTile[data-i]').forEach(t=>t.onclick=()=>openUserDeck(USER[+t.dataset.i]));
@@ -111,7 +122,7 @@ function renderAgentDecks(agents){
   AGENTS=agents||[];
   const box=document.getElementById('agentDecks');
   if(!AGENTS.length){box.innerHTML='<div class="emptyNote">登録AIがありません。「AIエージェント登録」から追加できます。</div>';return;}
-  box.innerHTML=AGENTS.map((a,i)=>`<div class="boxTile" data-i="${i}">${tileInner(a.name,false,'🤖')}</div>`).join('');
+  box.innerHTML=AGENTS.map((a,i)=>`<div class="boxTile" data-i="${i}">${tileInner(a.name,false,coverImg(a.cards))}</div>`).join('');
   box.querySelectorAll('.boxTile[data-i]').forEach(t=>t.onclick=()=>openAgentDeck(AGENTS[+t.dataset.i], +t.dataset.i));
 }
 async function delDeck(id, name){
