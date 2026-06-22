@@ -849,8 +849,13 @@ function renderWaiting(ns){
   const b=document.getElementById('copyUrl');
   if(b)b.onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(shareUrl());b.textContent='コピーしました';};
 }
+function schedulePvpPoll(ms){
+  // 二重起動を避けて次のポーリングを予約する。
+  if(pvpTimer)clearTimeout(pvpTimer);
+  pvpTimer=setTimeout(pvpPoll, ms||1200);
+}
 async function applyPvp(ns){
-  if(ns&&ns.status==='waiting'){STATE=ns;renderWaiting(ns);return;}
+  if(ns&&ns.status==='waiting'){STATE=ns;renderWaiting(ns);schedulePvpPoll(1500);return;}
   STATE=ns;renderBoard();renderBanner();
   document.getElementById('aiControls').classList.add('hidden');
   const ask=document.getElementById('ask');ask.classList.remove('hidden');
@@ -858,19 +863,17 @@ async function applyPvp(ns){
   if(ns.ver!==lastVer && ns.events && ns.events.length){
     lastVer=ns.ver;busy=true;await playEvents(ns.events);busy=false;
   }else{lastVer=ns.ver;}
-  if(ns.result!==-1){ask.innerHTML='';return;}
-  if(ns.yourTurn){renderAsk();}
-  else{ask.innerHTML='<div class="hint">相手の番です。お待ちください…</div>';}
+  if(ns.result!==-1){ask.innerHTML='';if(pvpTimer){clearTimeout(pvpTimer);pvpTimer=null;}return;}
+  if(ns.yourTurn){renderAsk();}                    // 自分の手番＝入力待ち（ポーリング停止）
+  else{ask.innerHTML='<div class="hint">相手の番です。お待ちください…</div>';schedulePvpPoll();}  // 相手の手を検知し続ける
 }
 async function pvpPoll(){
   pvpTimer=null;
   if(STATE&&STATE.result!==-1)return;
-  let ns; try{ns=await get('/api/state'+qs());}catch(e){pvpTimer=setTimeout(pvpPoll,1500);return;}
-  if(ns.status==='waiting'){renderWaiting(ns);pvpTimer=setTimeout(pvpPoll,1500);return;}
-  if(!ns.board){pvpTimer=setTimeout(pvpPoll,1500);return;}
-  await applyPvp(ns);
-  // 自分の手番になったらポーリング停止（操作待ち）。相手の番なら継続。
-  if(ns.result===-1 && !ns.yourTurn) pvpTimer=setTimeout(pvpPoll,1200);
+  let ns; try{ns=await get('/api/state'+qs());}catch(e){schedulePvpPoll(1500);return;}
+  if(ns.status==='waiting'){renderWaiting(ns);schedulePvpPoll(1500);return;}
+  if(!ns.board){schedulePvpPoll(1500);return;}
+  await applyPvp(ns);   // 次のポーリング要否は applyPvp が判断・予約する
 }
 
 /* ---------- AI vs AI 観戦コントロール ---------- */
@@ -915,10 +918,9 @@ function showNoGame(){
   // 人 vs 人（オンライン）
   if(st.mode==='pvp'){
     document.getElementById('logbody').innerHTML='';
-    if(st.status==='waiting'){renderWaiting(st);pvpTimer=setTimeout(pvpPoll,1500);return;}
+    if(st.status==='waiting'){renderWaiting(st);schedulePvpPoll(1500);return;}
     pushLog({who:'sys',text:'―― 対戦開始 ――'});
-    await applyPvp(st);
-    if(st.result===-1 && !st.yourTurn) pvpTimer=setTimeout(pvpPoll,1200);
+    await applyPvp(st);   // 相手の手番なら applyPvp がポーリングを開始する
     return;
   }
   if(!st||!st.board){showNoGame();return;}
