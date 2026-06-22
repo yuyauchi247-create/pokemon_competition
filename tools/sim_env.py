@@ -252,6 +252,7 @@ def translate_logs(ob, human_index=0, st=None):
         kind = None
         dnm = None      # 引いたカード名（自分の公開ドローのみ）
         cause = None    # 効果ドローの原因カード名（直前のPLAY）
+        play_cid = None  # カード使用(PLAY)時のカードID（中央アニメ表示用）
         if t == LogType.TURN_START:
             txt = f"―― {label(pi)}のターン ――"
             turn_player = pi
@@ -283,6 +284,7 @@ def translate_logs(ob, human_index=0, st=None):
         elif t == LogType.PLAY:
             txt = f"{label(pi)}が「{nm}」を出した／使った"
             last_play_name = nm   # 直後のドローはこのカードの効果とみなす
+            play_cid = getattr(lg, "cardId", None)   # 中央アニメ表示用のカードID
         elif t == LogType.ATTACH:
             tgt = card_name(lg.cardIdTarget) if getattr(lg, "cardIdTarget", None) else ""
             txt = f"{label(pi)}が「{nm}」を{('「'+tgt+'」に') if tgt else ''}つけた"
@@ -315,7 +317,7 @@ def translate_logs(ob, human_index=0, st=None):
             txt = f"決着（{reason}）" if reason else "決着"
         if txt:
             events.append({"who": w, "text": txt, "_k": kind,
-                           "_nm": dnm, "_cause": cause})
+                           "_nm": dnm, "_cause": cause, "_cid": play_cid})
     # 状態を呼び出し側に書き戻す（次 delta へ引き継ぐ）
     st["turn_player"] = turn_player
     st["pending"] = pending_turn_draw
@@ -341,7 +343,10 @@ def _compress_draws(events):
         e = events[i]
         k = e.get("_k")
         if k not in _DRAW_KINDS:
-            out.append({"who": e["who"], "text": e["text"]})
+            ev = {"who": e["who"], "text": e["text"]}
+            if e.get("_cid"):
+                ev["cardId"] = e["_cid"]   # カード使用(PLAY)の中央アニメ表示用
+            out.append(ev)
             i += 1
             continue
         cause = e.get("_cause")

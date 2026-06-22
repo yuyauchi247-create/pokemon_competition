@@ -119,6 +119,25 @@
   .discardGrid{display:flex;flex-wrap:wrap;gap:6px;max-height:340px;overflow:auto;}
   .discardGrid img{width:60px;border-radius:5px;}
   .discardGrid .ph{width:60px;height:82px;background:#eef2f7;border-radius:5px;font-size:9px;display:flex;align-items:center;justify-content:center;text-align:center;color:#789;}
+  .discardGrid img,.discardGrid .ph{cursor:pointer;transition:transform .1s;}
+  .discardGrid img:hover,.discardGrid .ph:hover{transform:translateY(-3px);box-shadow:0 6px 14px #0b346b2e;}
+  /* トラッシュ: 実カードを数枚重ねて表示（クリックで一覧→詳細） */
+  .trashPile{padding:5px 7px;}
+  .trashStack{position:relative;display:flex;align-items:center;justify-content:center;height:44px;}
+  .trashStack img,.trashStack .ph{width:30px;height:42px;border-radius:4px;object-fit:cover;border:1px solid #fff;box-shadow:0 1px 4px #0b346b44;}
+  .trashStack img:not(:first-child),.trashStack .ph:not(:first-child){margin-left:-20px;}
+  .trashStack .ph{background:#cfdbe8;}
+  .trashEmpty{height:44px;display:flex;align-items:center;font-size:11px;color:#9fb0c4;}
+  /* 相手の手札（中身は伏せ、枚数ぶん裏面を表示） */
+  #oppHand .handback{width:54px;border-radius:6px;display:inline-block;box-shadow:0 2px 6px #0b346b30;vertical-align:bottom;}
+  #oppHand .handback:not(:first-child){margin-left:-22px;}  /* 少し重ねて省スペース */
+  /* カード使用の中央アニメ（人vs人） */
+  .cardUseOverlay{position:fixed;inset:0;z-index:65;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+  .cardUseCard{width:220px;max-width:60vw;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.5);
+    animation:cardUseIn .35s cubic-bezier(.2,1.2,.4,1) both;}
+  .cardUseOverlay.out .cardUseCard{animation:cardUseOut .4s ease forwards;}
+  @keyframes cardUseIn{from{opacity:0;transform:scale(.6) translateY(20px);}to{opacity:1;transform:scale(1) translateY(0);}}
+  @keyframes cardUseOut{to{opacity:0;transform:scale(.85) translateY(-10px);}}
   @media(max-width:980px){ #log{height:320px;} }
   /* ===== スマホ最適化：プレイマットを縮小して横はみ出し/見切れを防ぐ ===== */
   @media(max-width:640px){
@@ -362,7 +381,14 @@ function sideHtml(s){
 }
 function pilesHtml(s,who){
   const cond=s.conditions&&s.conditions.length?`<div class="pile" style="border-color:#f0b4be"><span class="plabel" style="color:#e0556b">${s.conditions.join(' ')}</span></div>`:'';
-  return `<button type="button" class="pile" data-who="${who}"><span class="pcount">${s.discard}</span><span class="plabel">トラッシュ</span></button>${cond}`;
+  // トラッシュ: 上の数枚を重ねて表示。クリックで一覧（showDiscard）。
+  const cards=s.discardList||[];
+  const top=cards.slice(-4);
+  const stack=top.length
+    ? top.map(c=>c.img?`<img src="${c.img}" alt="" draggable="false">`:'<div class="ph"></div>').join('')
+    : '<div class="trashEmpty">空</div>';
+  return `<button type="button" class="pile trashPile" data-who="${who}" title="トラッシュ ${s.discard}枚（クリックで一覧）">
+    <div class="trashStack">${stack}</div><span class="plabel">トラッシュ ${s.discard}</span></button>${cond}`;
 }
 
 /* ---------- 描画 ---------- */
@@ -398,8 +424,14 @@ function renderBoard(){
     oppHandLabel.classList.remove('hidden'); oppHandRow.classList.remove('hidden');
     oppHandRow.innerHTML=b.opp.hand.map(c=>tile(c,{})).join('')||'<span class="hint">なし</span>';
   }else{
+    // 人vsAI / 人vs人: 相手の手札は中身を伏せ、枚数ぶん裏面カードを表示する。
     document.getElementById('youHandLabel').textContent='あなたの手札';
-    oppHandLabel.classList.add('hidden'); oppHandRow.classList.add('hidden');
+    const n=(b.opp&&b.opp.handCount)||0;
+    oppHandLabel.textContent=(STATE.oppLabel||'相手')+' の手札（'+n+'枚）';
+    oppHandLabel.classList.remove('hidden'); oppHandRow.classList.remove('hidden');
+    oppHandRow.innerHTML = n
+      ? Array.from({length:n},()=>'<img class="handback" src="/card_back" alt="相手の手札（裏向き）" draggable="false">').join('')
+      : '<span class="hint">なし</span>';
   }
   bindClicks(); bindDnD();
 }
@@ -521,10 +553,18 @@ function bindClicks(){
 function showDiscard(who){
   const s=who==='you'?STATE.board.you:STATE.board.opp;
   const cards=s.discardList||[];
-  const grid=cards.map(c=>c.img?`<img src="${c.img}" title="${c.name}" alt="${c.name}">`:`<div class="ph">${c.name}</div>`).join('')||'<div class="hint">なし</div>';
+  const grid=cards.map((c,i)=>c.img
+    ? `<img data-cid="${c.id}" data-i="${i}" src="${c.img}" title="${c.name}" alt="${c.name}">`
+    : `<div class="ph" data-cid="${c.id}" data-i="${i}">${c.name}</div>`).join('')||'<div class="hint">なし</div>';
   document.getElementById('modal').innerHTML=`<h3>トラッシュ（${cards.length}枚）</h3>
     <div class="discardGrid">${grid}</div>
     <div class="acts"><button class="gray" onclick="closeModal()">閉じる</button></div>`;
+  // 各カードをクリックで詳細。‹ › でトラッシュ内の隣カードへ、戻るで一覧へ。
+  const backAct=[{label:'トラッシュ一覧へ戻る',onclick:()=>showDiscard(who)}];
+  const navList=cards.map(c=>({cid:c.id,actions:backAct}));
+  document.querySelectorAll('#modal .discardGrid [data-cid]').forEach(el=>{
+    el.onclick=()=>openCard(+el.dataset.cid, backAct, {list:navList, idx:+el.dataset.i});
+  });
   showModal();
 }
 async function openCard(cid,actions,nav){
@@ -640,8 +680,21 @@ function playEvents(events){return new Promise(res=>{
     pushLog(ev);
     let d=evDelay(ev, events.length);
     if(ev&&ev.text&&ev.text.indexOf('コイン')===0){ flipCoin(ev.text.indexOf('オモテ')>=0); d=Math.max(d,1600); }
+    // 人vs人: カード使用(PLAY)時に、中央へそのカードを約2秒表示する。
+    if(ev&&ev.cardId&&STATE&&STATE.mode==='pvp'){ showCardUse(ev.cardId); d=Math.max(d,1500); }
     setTimeout(tick, d); };
   tick();});}
+
+/* カード使用の中央アニメ（人vs人）。約2秒表示してフェードアウト。 */
+let _cardUseTimers=[];
+function showCardUse(cid){
+  const wrap=document.createElement('div');
+  wrap.className='cardUseOverlay';
+  wrap.innerHTML=`<img class="cardUseCard" src="/card_img/${cid}" alt="使用カード" onerror="this.style.display='none'">`;
+  document.body.appendChild(wrap);
+  _cardUseTimers.push(setTimeout(()=>wrap.classList.add('out'),1600));
+  _cardUseTimers.push(setTimeout(()=>wrap.remove(),2000));
+}
 
 /* ---------- 状態反映 ---------- */
 function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
