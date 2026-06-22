@@ -35,6 +35,9 @@ data/reference/kaggle_notebooks/
 # 自作の提出物・実験用エージェント（ローカル作業用。git管理しない）
 submissions/
 
+# Kaggle環境シミュレータ(git clone。upstreamの別リポジトリなので含めない)
+kaggle-environments/
+
 # ローカル個人設定・作業メモ
 .claude/settings.local.json
 prompt.txt

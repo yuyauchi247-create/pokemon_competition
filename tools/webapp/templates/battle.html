@@ -678,7 +678,11 @@ function bindDnD(){
 }
 
 /* ---------- イベント逐次再生 ---------- */
-function pushLog(ev){const body=document.getElementById('logbody');const d=document.createElement('div');
+let _renderedSeqs=new Set();   // 描画済みイベントの通し番号。ポーリング再取得での二重表示を防ぐ。
+function pushLog(ev){
+  // seq 付きイベント（サーバ由来）は一度だけ描画する。seq 無し（システム文言）は常に描画。
+  if(ev&&ev.seq!=null){ if(_renderedSeqs.has(ev.seq))return; _renderedSeqs.add(ev.seq); }
+  const body=document.getElementById('logbody');const d=document.createElement('div');
   d.className='ev '+(ev.who||'sys');d.textContent=ev.text;body.appendChild(d);body.scrollTop=body.scrollHeight;}
 function evDelay(ev,total){
   const fast=total>16;
@@ -689,11 +693,11 @@ function evDelay(ev,total){
   else base=fast?180:380;
   return Math.max(40, Math.round(base/speedMult));  // 倍速に応じて短縮
 }
-function playEvents(events){return new Promise(res=>{
+function playEvents(events,opts){const noLog=opts&&opts.log===false;return new Promise(res=>{
   if(!events||!events.length){res();return;}
   let i=0;
   const tick=()=>{ if(i>=events.length){res();return;} const ev=events[i++];
-    pushLog(ev);
+    if(!noLog)pushLog(ev);   // PvPはログ欄を累積ログ側で冪等再構築するのでアニメ側は描かない
     let d=evDelay(ev, events.length);
     if(ev&&ev.text&&ev.text.indexOf('コイン')===0){ flipCoin(ev.text.indexOf('オモテ')>=0); d=Math.max(d,1600); }
     // 人vs人: カード使用(PLAY)時に、中央へそのカードを約2秒表示する。
@@ -921,16 +925,18 @@ function renderWaiting(ns){
 function schedulePvpPoll(ms){
   // 二重起動を避けて次のポーリングを予約する。
   if(pvpTimer)clearTimeout(pvpTimer);
-  pvpTimer=setTimeout(pvpPoll, ms||1200);
+  pvpTimer=setTimeout(pvpPoll, ms||600);   // 既定600ms。相手着手の反映遅延を短縮（旧1200ms）
 }
 async function applyPvp(ns){
   if(ns&&ns.status==='waiting'){STATE=ns;renderWaiting(ns);schedulePvpPoll(1500);return;}
   STATE=ns;renderBoard();renderBanner();
   document.getElementById('aiControls').classList.add('hidden');
   const ask=document.getElementById('ask');ask.classList.remove('hidden');
-  // 新しい手（ver変化）のときだけログを再生
+  // ログ欄は累積ログ(seq)で冪等に再構築（取りこぼし無し・二重表示無し）
+  (ns.log||[]).forEach(pushLog);
+  // アニメーション（コイン/カード使用/ダメージ）は最新差分のみ、ver変化時に1回だけ
   if(ns.ver!==lastVer && ns.events && ns.events.length){
-    lastVer=ns.ver;busy=true;await playEvents(ns.events);busy=false;
+    lastVer=ns.ver;busy=true;await playEvents(ns.events,{log:false});busy=false;
   }else{lastVer=ns.ver;}
   if(ns.result!==-1){ask.innerHTML='';if(pvpTimer){clearTimeout(pvpTimer);pvpTimer=null;}return;}
   if(ns.yourTurn){renderAsk();}                    // 自分の手番＝入力待ち（ポーリング停止）
