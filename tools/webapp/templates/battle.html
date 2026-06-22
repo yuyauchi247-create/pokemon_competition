@@ -17,17 +17,17 @@
   @media(max-width:980px){.battle{grid-template-columns:1fr;}}
   .stage{min-width:0;}
   .nogame{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:34px;text-align:center;color:var(--sub);line-height:1.8;}
-  .playmat{--bcard:74px;position:relative;display:grid;
-    grid-template-columns:minmax(118px,.85fr) minmax(0,2.2fr) minmax(118px,.85fr);
+  .playmat{--bcard:92px;position:relative;display:grid;
+    grid-template-columns:minmax(150px,.8fr) minmax(0,1.9fr) minmax(150px,.8fr);
     grid-template-rows:auto auto auto;
     grid-template-areas:"oppside oppbench opppiles" "midl actives midr" "youside youbench youpiles";
-    gap:10px;padding:16px;border-radius:22px;
+    gap:14px;padding:18px;border-radius:22px;
     background:radial-gradient(circle at 50% 50%,rgba(14,165,183,.08),transparent 40%),linear-gradient(180deg,#eef6fc,#e7f0f8);
     border:1px solid #d3e0ec;box-shadow:inset 0 0 0 2px #ffffffcc,0 12px 34px #0b346b16;overflow:hidden;}
-  .playmat::before{content:"";position:absolute;left:50%;top:50%;width:160px;height:160px;transform:translate(-50%,-50%);z-index:0;opacity:.4;pointer-events:none;
-    border-radius:50%;border:9px solid #b9cbe0;
-    background:linear-gradient(#0000 calc(50% - 5px),#b9cbe0 calc(50% - 5px) calc(50% + 5px),#0000 calc(50% + 5px));}
-  .playmat::after{content:"";position:absolute;left:50%;top:50%;width:30px;height:30px;transform:translate(-50%,-50%);z-index:0;opacity:.5;
+  .playmat::before{content:"";position:absolute;left:50%;top:50%;width:210px;height:210px;transform:translate(-50%,-50%);z-index:0;opacity:.38;pointer-events:none;
+    border-radius:50%;border:11px solid #b9cbe0;
+    background:linear-gradient(#0000 calc(50% - 6px),#b9cbe0 calc(50% - 6px) calc(50% + 6px),#0000 calc(50% + 6px));}
+  .playmat::after{content:"";position:absolute;left:50%;top:50%;width:40px;height:40px;transform:translate(-50%,-50%);z-index:0;opacity:.5;
     border-radius:50%;background:#fff;border:8px solid #b9cbe0;pointer-events:none;}
   .playmat>*{position:relative;z-index:1;min-width:0;}
   #oppSide{grid-area:oppside}#oppBench{grid-area:oppbench}#oppPiles{grid-area:opppiles}
@@ -40,20 +40,20 @@
   .midline{font-weight:800;color:#9fb3c7;font-size:12px;letter-spacing:.18em;}
   .zone-side{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;}
   .sidebox{text-align:center;}
-  .sblabel{font-size:11px;color:var(--sub);font-weight:700;margin-bottom:3px;}
-  .prizegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;justify-content:center;}
-  .prizeback{width:20px;height:28px;border-radius:3px;background:linear-gradient(135deg,#5b8def,#274a9e);box-shadow:0 1px 3px #0b346b40;}
-  .pile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:56px;padding:7px 8px;border-radius:10px;
+  .sblabel{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:4px;}
+  .prizegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;justify-content:center;}
+  .prizeback{width:25px;height:34px;border-radius:4px;background:linear-gradient(135deg,#5b8def,#274a9e);box-shadow:0 1px 3px #0b346b40;}
+  .pile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:70px;padding:9px 10px;border-radius:12px;
     background:#ffffffcc;border:1px solid var(--line);box-shadow:0 2px 8px #0b346b12;}
   button.pile{cursor:pointer;}
   button.pile:hover{border-color:var(--teal);transform:translateY(-1px);}
-  .pile .pcount{font-size:16px;font-weight:800;color:var(--ink);}
-  .pile .plabel{font-size:10px;color:var(--sub);font-weight:700;}
+  .pile .pcount{font-size:18px;font-weight:800;color:var(--ink);}
+  .pile .plabel{font-size:11px;color:var(--sub);font-weight:700;}
   .playmat .pcard{width:var(--bcard);}
   .playmat .pcard.imgcard{width:var(--bcard);}
-  .zone-actives .pcard{width:calc(var(--bcard)*1.5);}
-  .playmat .empty-c{width:var(--bcard);height:calc(var(--bcard)*1.36);font-size:10px;}
-  .zone-actives .empty-c{width:calc(var(--bcard)*1.5);height:calc(var(--bcard)*1.5*1.36);}
+  .zone-actives .pcard{width:calc(var(--bcard)*1.7);}
+  .playmat .empty-c{width:var(--bcard);height:calc(var(--bcard)*1.36);font-size:11px;}
+  .zone-actives .empty-c{width:calc(var(--bcard)*1.7);height:calc(var(--bcard)*1.7*1.36);}
   .handzone{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;margin-top:12px;box-shadow:0 4px 18px #0b346b0a;}
   .handlabel{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:8px;}
   .handlabel.oppHandLabel{margin-top:12px;}
@@ -123,16 +123,16 @@
   .discardGrid img:hover,.discardGrid .ph:hover{transform:translateY(-3px);box-shadow:0 6px 14px #0b346b2e;}
   /* トラッシュ: 実カードを数枚重ねて表示（クリックで一覧→詳細） */
   .trashPile{padding:5px 7px;}
-  .trashStack{position:relative;display:flex;align-items:center;justify-content:center;height:44px;}
-  .trashStack img,.trashStack .ph{width:30px;height:42px;border-radius:4px;object-fit:cover;border:1px solid #fff;box-shadow:0 1px 4px #0b346b44;}
-  .trashStack img:not(:first-child),.trashStack .ph:not(:first-child){margin-left:-20px;}
+  .trashStack{position:relative;display:flex;align-items:center;justify-content:center;height:58px;}
+  .trashStack img,.trashStack .ph{width:40px;height:56px;border-radius:5px;object-fit:cover;border:1px solid #fff;box-shadow:0 1px 4px #0b346b44;}
+  .trashStack img:not(:first-child),.trashStack .ph:not(:first-child){margin-left:-26px;}
   .trashStack .ph{background:#cfdbe8;}
-  .trashEmpty{height:44px;display:flex;align-items:center;font-size:11px;color:#9fb0c4;}
+  .trashEmpty{height:58px;display:flex;align-items:center;font-size:12px;color:#9fb0c4;}
   /* 山札: 裏面カードを重ねてデッキの厚みを表現（中身は非公開なのでクリック無し） */
-  .deckPile .deckStack{position:relative;width:40px;height:50px;}
-  .deckStack .deckback{position:absolute;width:34px;border-radius:4px;border:1px solid #fff;box-shadow:0 1px 3px #0b346b40;}
+  .deckPile .deckStack{position:relative;width:60px;height:70px;}
+  .deckStack .deckback{position:absolute;width:48px;border-radius:5px;border:1px solid #fff;box-shadow:0 1px 3px #0b346b40;}
   .deckStack .deckcount{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    font-size:14px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.75);z-index:5;}
+    font-size:17px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8);z-index:5;}
   /* 相手の手札（中身は伏せ、枚数ぶん裏面を表示） */
   #oppHand .handback{width:54px;border-radius:6px;display:inline-block;box-shadow:0 2px 6px #0b346b30;vertical-align:bottom;}
   #oppHand .handback:not(:first-child){margin-left:-22px;}  /* 少し重ねて省スペース */
