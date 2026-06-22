@@ -136,6 +136,20 @@
   .deckCard .dknm{font-weight:800;color:var(--ink);font-size:14px;}
   .deckCard .dkdesc{color:var(--sub);font-size:12px;margin:2px 0 0 24px;}
   .deckCards{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0 24px;}
+  /* デッキ選択タイル（シンプル表示→クリックで詳細） */
+  .deckTiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:8px 0;}
+  .deckTiles .deckTile{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
+            background:linear-gradient(180deg,#fbfdff,#eef4fb);border:1px solid var(--line);border-radius:14px;
+            padding:14px 10px;transition:.15s;text-align:center;}
+  .deckTiles .deckTile:hover{transform:translateY(-2px);box-shadow:0 8px 20px #0b346b1a;border-color:var(--teal);}
+  .deckTiles .deckTile.sel{border-color:var(--blue);box-shadow:0 0 0 2px #3b82f655;background:#f0f6ff;}
+  .deckTiles .deckTile .box{font-size:30px;line-height:1;}
+  .deckTiles .deckTile .dknm{font-size:13px;font-weight:800;color:var(--ink);line-height:1.25;word-break:break-word;}
+  .deckTiles .deckTile .lock{position:absolute;top:6px;right:8px;font-size:13px;}
+  .deckDetail{margin:8px 0;}
+  .deckDetail .pwrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:#fff7e6;border:1px solid #f0e0a8;border-radius:10px;padding:10px;}
+  .deckDetail .pwrow input{border:1px solid var(--line);border-radius:8px;padding:7px;min-width:160px;}
+  .deckCards .miniCard{cursor:pointer;}
   .miniCard{width:64px;border-radius:7px;overflow:hidden;background:#fff;border:1px solid var(--line);
             position:relative;box-shadow:0 2px 6px #0b346b14;}
   .miniCard img{width:100%;display:block;}
@@ -273,6 +287,25 @@ function setModalNav(prev,next){
 }
 function showModal(){_modalNav=null;document.getElementById('overlay').style.display='flex';}
 function closeModal(){document.getElementById('overlay').style.display='none';_modalNav=null;}
+/* 全画面共通: カード詳細（読み取り専用）モーダル。list/idx を渡すと ‹ › で隣カードへ。 */
+async function showCardDetail(cid, list, idx){
+  let c; try{ c=await get('/api/card/'+cid); }catch(e){ return; }
+  const t=c.type||'COLORLESS';
+  const isTrainer=['ITEM','SUPPORTER','STADIUM','TOOL'].includes(c.cardType);
+  const chip=isTrainer?(c.stage||'トレーナーズ'):`${ICON[t]||'⭐'} ${c.typeJP||t}`;
+  const mv=(c.moves||[]).map(m=>`<div class="mv"><b>${m.name}</b> ${m.cost?'['+m.cost+']':''} <span style="float:right">${m.damage||''}</span>${m.effect?`<div class="mrow">${(m.effect||'').replace(/\n/g,'<br>')}</div>`:''}</div>`).join('');
+  let body=mv; if(!body&&c.text) body=`<div class="mv">${c.text.replace(/\n/g,'<br>')}</div>`; if(!body) body='<div class="mrow" style="opacity:.6">テキスト情報なし</div>';
+  const info=[]; if(c.evolvesFrom)info.push('進化前: '+c.evolvesFrom); if(c.weakness)info.push('弱点: '+c.weakness); if(c.resistance)info.push('抵抗: '+c.resistance); if(c.retreat)info.push('にげる: '+c.retreat);
+  const img=c.img?`<img class="cardimg" src="${c.img}" alt="${c.name}">`:'';
+  document.getElementById('modal').innerHTML=`<span class="mtype c-${isTrainer?'COLORLESS':t}">${chip}</span>
+    <h3>${c.name}</h3>${img}<div class="mrow">${isTrainer?'':((c.stage||'')+(c.hp?'・HP'+c.hp:''))}　${info.join('　')}</div>${body}
+    <div class="acts"><button class="gray" onclick="closeModal()">閉じる</button></div>`;
+  showModal();
+  if(list&&list.length>1&&idx!=null&&idx>=0){
+    setModalNav(idx>0?()=>showCardDetail(list[idx-1],list,idx-1):null,
+                idx<list.length-1?()=>showCardDetail(list[idx+1],list,idx+1):null);
+  }
+}
 document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')closeModal();};
 /* キーボード ← → でカード遷移、Esc で閉じる */
 document.addEventListener('keydown',e=>{

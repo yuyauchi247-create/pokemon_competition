@@ -441,7 +441,9 @@ function renderBoard(){
     // 人vsAI / 人vs人: 相手の手札は中身を伏せ、枚数ぶん裏面カードを表示する。
     document.getElementById('youHandLabel').textContent='あなたの手札';
     const n=(b.opp&&b.opp.handCount)||0;
-    oppHandLabel.textContent=(STATE.oppLabel||'相手')+' の手札（'+n+'枚）';
+    // 人vs人は相手のデッキを伏せるため「対戦相手の手札」表記に統一する。
+    const oppName = STATE.mode==='pvp' ? '対戦相手' : (STATE.oppLabel||'相手');
+    oppHandLabel.textContent=oppName+'の手札（'+n+'枚）';
     oppHandLabel.classList.remove('hidden'); oppHandRow.classList.remove('hidden');
     oppHandRow.innerHTML = n
       ? Array.from({length:n},()=>'<img class="handback" src="/card_back" alt="相手の手札（裏向き）" draggable="false">').join('')

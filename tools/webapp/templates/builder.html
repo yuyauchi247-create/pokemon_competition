@@ -29,6 +29,13 @@
       <select id="flagFilter"><option value="">レアリティ問わず</option><option value="ex">ポケモンex</option><option value="MEGA">メガex</option><option value="tera">テラスタル</option><option value="ACE">ACE SPEC</option></select>
       <select id="sortBy"><option value="">並び: ID順</option><option value="hp">HP高い順</option><option value="dmg">攻撃力高い順</option><option value="type">タイプ順</option></select>
     </div>
+    <div class="deckVisibility" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px">
+      <span class="handLabel">公開設定</span>
+      <label><input type="radio" name="deckVis" value="public" checked> 公開</label>
+      <label><input type="radio" name="deckVis" value="private"> 非公開</label>
+      <input id="deckPassword" type="password" maxlength="40" placeholder="パスワード（非公開時に必須）" style="display:none;border:1px solid var(--line);border-radius:8px;padding:7px;min-width:200px">
+      <span class="hint">非公開: デッキ名は表示されますが、中身の閲覧・対戦での使用にパスワードが必要になります。</span>
+    </div>
     <div class="handTest">
       <div class="handBtns">
         <span class="handLabel">🃏 手札テスト</span>
@@ -174,17 +181,22 @@ function renderBuilderDeck(){
   document.querySelectorAll('#builderDeck .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id,false,ids));
 }
 function builderMessage(msg){document.getElementById('builderMsg').textContent=msg||'';}
+function deckVisibility(){return document.querySelector('input[name="deckVis"]:checked')?.value||'public';}
 async function saveBuilderDeck(){
   const name=document.getElementById('deckNameInput').value.trim()||'保存デッキ';
+  const visibility=deckVisibility();
+  const password=document.getElementById('deckPassword').value;
+  // 新規で非公開ならパスワード必須（編集時は未入力なら既存を維持）。
+  if(visibility==='private' && !password && !EDIT_ID){builderMessage('非公開デッキにはパスワードを設定してください。');return;}
   builderMessage(EDIT_ID?'更新中…':'保存中…');
+  const body={name,cards:CURRENT_DECK,visibility,password};
   let r;
   if(EDIT_ID){
     const res=await fetch('/api/user_decks/'+EDIT_ID,{method:'PUT',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,cards:CURRENT_DECK})});
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     r=await res.json();
   }else{
-    r=await post('/api/user_decks',{name,cards:CURRENT_DECK});
+    r=await post('/api/user_decks',body);
   }
   if(r.error){builderMessage(r.error);return;}
   location.href='/decks';   // 保存/更新したら一覧へ
@@ -194,16 +206,31 @@ async function saveBuilderDeck(){
 async function maybeLoadEdit(){
   const id=new URLSearchParams(location.search).get('edit');
   if(!id)return;
-  const d=await get('/api/user_decks/'+id);
+  let d=await get('/api/user_decks/'+encodeURIComponent(id));
+  // 非公開デッキはパスワードが必要（編集も中身閲覧のため）。
+  while(d.private){
+    const pw=prompt('このデッキは非公開です。編集するにはパスワードを入力してください。');
+    if(pw===null){location.href='/decks';return;}
+    d=await get('/api/user_decks/'+encodeURIComponent(id)+'?password='+encodeURIComponent(pw));
+    if(d.error&&!d.private){builderMessage(d.error);return;}
+  }
   if(d.error){builderMessage(d.error);return;}
   EDIT_ID=id;
   CURRENT_DECK=[];
   (d.cards||[]).forEach(c=>{for(let i=0;i<(c.count||0);i++)CURRENT_DECK.push(c.id);});
   document.getElementById('deckNameInput').value=d.name||'';
+  // 公開設定を反映（非公開なら選択。パスワードは未入力＝既存維持）。
+  if(d.visibility==='private'){
+    const r=document.querySelector('input[name="deckVis"][value="private"]'); if(r){r.checked=true;togglePwInput();}
+  }
   const h=document.querySelector('#builder h2'); if(h)h.textContent='デッキ編集';
   document.getElementById('saveDeckBtn').textContent='このデッキを更新';
   renderBuilderDeck();renderCardLibrary();
 }
+function togglePwInput(){
+  document.getElementById('deckPassword').style.display = deckVisibility()==='private'?'':'none';
+}
+document.querySelectorAll('input[name="deckVis"]').forEach(r=>r.addEventListener('change',togglePwInput));
 
 ['cardSearch','cardTypeFilter','energyFilter','flagFilter','sortBy'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
 document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/decks';};
