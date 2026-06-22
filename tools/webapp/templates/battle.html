@@ -17,17 +17,17 @@
   @media(max-width:980px){.battle{grid-template-columns:1fr;}}
   .stage{min-width:0;}
   .nogame{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:34px;text-align:center;color:var(--sub);line-height:1.8;}
-  .playmat{--bcard:74px;position:relative;display:grid;
-    grid-template-columns:minmax(118px,.85fr) minmax(0,2.2fr) minmax(118px,.85fr);
+  .playmat{--bcard:92px;position:relative;display:grid;
+    grid-template-columns:minmax(150px,.8fr) minmax(0,1.9fr) minmax(150px,.8fr);
     grid-template-rows:auto auto auto;
     grid-template-areas:"oppside oppbench opppiles" "midl actives midr" "youside youbench youpiles";
-    gap:10px;padding:16px;border-radius:22px;
+    gap:14px;padding:18px;border-radius:22px;
     background:radial-gradient(circle at 50% 50%,rgba(14,165,183,.08),transparent 40%),linear-gradient(180deg,#eef6fc,#e7f0f8);
     border:1px solid #d3e0ec;box-shadow:inset 0 0 0 2px #ffffffcc,0 12px 34px #0b346b16;overflow:hidden;}
-  .playmat::before{content:"";position:absolute;left:50%;top:50%;width:160px;height:160px;transform:translate(-50%,-50%);z-index:0;opacity:.4;pointer-events:none;
-    border-radius:50%;border:9px solid #b9cbe0;
-    background:linear-gradient(#0000 calc(50% - 5px),#b9cbe0 calc(50% - 5px) calc(50% + 5px),#0000 calc(50% + 5px));}
-  .playmat::after{content:"";position:absolute;left:50%;top:50%;width:30px;height:30px;transform:translate(-50%,-50%);z-index:0;opacity:.5;
+  .playmat::before{content:"";position:absolute;left:50%;top:50%;width:210px;height:210px;transform:translate(-50%,-50%);z-index:0;opacity:.38;pointer-events:none;
+    border-radius:50%;border:11px solid #b9cbe0;
+    background:linear-gradient(#0000 calc(50% - 6px),#b9cbe0 calc(50% - 6px) calc(50% + 6px),#0000 calc(50% + 6px));}
+  .playmat::after{content:"";position:absolute;left:50%;top:50%;width:40px;height:40px;transform:translate(-50%,-50%);z-index:0;opacity:.5;
     border-radius:50%;background:#fff;border:8px solid #b9cbe0;pointer-events:none;}
   .playmat>*{position:relative;z-index:1;min-width:0;}
   #oppSide{grid-area:oppside}#oppBench{grid-area:oppbench}#oppPiles{grid-area:opppiles}
@@ -40,20 +40,20 @@
   .midline{font-weight:800;color:#9fb3c7;font-size:12px;letter-spacing:.18em;}
   .zone-side{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;}
   .sidebox{text-align:center;}
-  .sblabel{font-size:11px;color:var(--sub);font-weight:700;margin-bottom:3px;}
-  .prizegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;justify-content:center;}
-  .prizeback{width:20px;height:28px;border-radius:3px;background:linear-gradient(135deg,#5b8def,#274a9e);box-shadow:0 1px 3px #0b346b40;}
-  .pile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:56px;padding:7px 8px;border-radius:10px;
+  .sblabel{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:4px;}
+  .prizegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;justify-content:center;}
+  .prizeback{width:25px;height:34px;border-radius:4px;background:linear-gradient(135deg,#5b8def,#274a9e);box-shadow:0 1px 3px #0b346b40;}
+  .pile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:70px;padding:9px 10px;border-radius:12px;
     background:#ffffffcc;border:1px solid var(--line);box-shadow:0 2px 8px #0b346b12;}
   button.pile{cursor:pointer;}
   button.pile:hover{border-color:var(--teal);transform:translateY(-1px);}
-  .pile .pcount{font-size:16px;font-weight:800;color:var(--ink);}
-  .pile .plabel{font-size:10px;color:var(--sub);font-weight:700;}
+  .pile .pcount{font-size:18px;font-weight:800;color:var(--ink);}
+  .pile .plabel{font-size:11px;color:var(--sub);font-weight:700;}
   .playmat .pcard{width:var(--bcard);}
   .playmat .pcard.imgcard{width:var(--bcard);}
-  .zone-actives .pcard{width:calc(var(--bcard)*1.5);}
-  .playmat .empty-c{width:var(--bcard);height:calc(var(--bcard)*1.36);font-size:10px;}
-  .zone-actives .empty-c{width:calc(var(--bcard)*1.5);height:calc(var(--bcard)*1.5*1.36);}
+  .zone-actives .pcard{width:calc(var(--bcard)*1.7);}
+  .playmat .empty-c{width:var(--bcard);height:calc(var(--bcard)*1.36);font-size:11px;}
+  .zone-actives .empty-c{width:calc(var(--bcard)*1.7);height:calc(var(--bcard)*1.7*1.36);}
   .handzone{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;margin-top:12px;box-shadow:0 4px 18px #0b346b0a;}
   .handlabel{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:8px;}
   .handlabel.oppHandLabel{margin-top:12px;}
@@ -119,6 +119,30 @@
   .discardGrid{display:flex;flex-wrap:wrap;gap:6px;max-height:340px;overflow:auto;}
   .discardGrid img{width:60px;border-radius:5px;}
   .discardGrid .ph{width:60px;height:82px;background:#eef2f7;border-radius:5px;font-size:9px;display:flex;align-items:center;justify-content:center;text-align:center;color:#789;}
+  .discardGrid img,.discardGrid .ph{cursor:pointer;transition:transform .1s;}
+  .discardGrid img:hover,.discardGrid .ph:hover{transform:translateY(-3px);box-shadow:0 6px 14px #0b346b2e;}
+  /* トラッシュ: 実カードを数枚重ねて表示（クリックで一覧→詳細） */
+  .trashPile{padding:5px 7px;}
+  .trashStack{position:relative;display:flex;align-items:center;justify-content:center;height:58px;}
+  .trashStack img,.trashStack .ph{width:40px;height:56px;border-radius:5px;object-fit:cover;border:1px solid #fff;box-shadow:0 1px 4px #0b346b44;}
+  .trashStack img:not(:first-child),.trashStack .ph:not(:first-child){margin-left:-26px;}
+  .trashStack .ph{background:#cfdbe8;}
+  .trashEmpty{height:58px;display:flex;align-items:center;font-size:12px;color:#9fb0c4;}
+  /* 山札: 裏面カードを重ねてデッキの厚みを表現（中身は非公開なのでクリック無し） */
+  .deckPile .deckStack{position:relative;width:60px;height:70px;}
+  .deckStack .deckback{position:absolute;width:48px;border-radius:5px;border:1px solid #fff;box-shadow:0 1px 3px #0b346b40;}
+  .deckStack .deckcount{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:17px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8);z-index:5;}
+  /* 相手の手札（中身は伏せ、枚数ぶん裏面を表示） */
+  #oppHand .handback{width:54px;border-radius:6px;display:inline-block;box-shadow:0 2px 6px #0b346b30;vertical-align:bottom;}
+  #oppHand .handback:not(:first-child){margin-left:-22px;}  /* 少し重ねて省スペース */
+  /* カード使用の中央アニメ（人vs人） */
+  .cardUseOverlay{position:fixed;inset:0;z-index:65;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+  .cardUseCard{width:220px;max-width:60vw;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.5);
+    animation:cardUseIn .35s cubic-bezier(.2,1.2,.4,1) both;}
+  .cardUseOverlay.out .cardUseCard{animation:cardUseOut .4s ease forwards;}
+  @keyframes cardUseIn{from{opacity:0;transform:scale(.6) translateY(20px);}to{opacity:1;transform:scale(1) translateY(0);}}
+  @keyframes cardUseOut{to{opacity:0;transform:scale(.85) translateY(-10px);}}
   @media(max-width:980px){ #log{height:320px;} }
   /* ===== スマホ最適化：プレイマットを縮小して横はみ出し/見切れを防ぐ ===== */
   @media(max-width:640px){
@@ -355,14 +379,30 @@ function benchHtml(bench,interactive,glowSet,pickSet){
   if(!slots.length) slots.push('<div class="empty-c">ベンチなし</div>');
   return slots.join('');
 }
+function deckPileHtml(s){
+  const n=Math.max(0,s.deck||0);
+  if(!n) return `<div class="pile"><span class="pcount">0</span><span class="plabel">山札</span></div>`;
+  const layers=Math.min(5,Math.max(1,Math.round(n/10)));  // 枚数に応じて厚みを変える(1〜5層)
+  let stack='';
+  for(let i=0;i<layers;i++) stack+=`<img class="deckback" style="left:${i*2}px;top:${-i*2}px" src="/card_back" alt="" draggable="false">`;
+  return `<div class="pile deckPile" title="山札 ${n}枚">
+    <div class="deckStack">${stack}<span class="deckcount">${n}</span></div><span class="plabel">山札</span></div>`;
+}
 function sideHtml(s){
   const backs=Array.from({length:Math.max(0,s.prize)},()=>'<div class="prizeback"></div>').join('');
   return `<div class="sidebox"><div class="sblabel">サイド ${s.prize}</div><div class="prizegrid">${backs}</div></div>
-          <div class="pile"><span class="pcount">${s.deck}</span><span class="plabel">山札</span></div>`;
+          ${deckPileHtml(s)}`;
 }
 function pilesHtml(s,who){
   const cond=s.conditions&&s.conditions.length?`<div class="pile" style="border-color:#f0b4be"><span class="plabel" style="color:#e0556b">${s.conditions.join(' ')}</span></div>`:'';
-  return `<button type="button" class="pile" data-who="${who}"><span class="pcount">${s.discard}</span><span class="plabel">トラッシュ</span></button>${cond}`;
+  // トラッシュ: 上の数枚を重ねて表示。クリックで一覧（showDiscard）。
+  const cards=s.discardList||[];
+  const top=cards.slice(-4);
+  const stack=top.length
+    ? top.map(c=>c.img?`<img src="${c.img}" alt="" draggable="false">`:'<div class="ph"></div>').join('')
+    : '<div class="trashEmpty">空</div>';
+  return `<button type="button" class="pile trashPile" data-who="${who}" title="トラッシュ ${s.discard}枚（クリックで一覧）">
+    <div class="trashStack">${stack}</div><span class="plabel">トラッシュ ${s.discard}</span></button>${cond}`;
 }
 
 /* ---------- 描画 ---------- */
@@ -398,8 +438,14 @@ function renderBoard(){
     oppHandLabel.classList.remove('hidden'); oppHandRow.classList.remove('hidden');
     oppHandRow.innerHTML=b.opp.hand.map(c=>tile(c,{})).join('')||'<span class="hint">なし</span>';
   }else{
+    // 人vsAI / 人vs人: 相手の手札は中身を伏せ、枚数ぶん裏面カードを表示する。
     document.getElementById('youHandLabel').textContent='あなたの手札';
-    oppHandLabel.classList.add('hidden'); oppHandRow.classList.add('hidden');
+    const n=(b.opp&&b.opp.handCount)||0;
+    oppHandLabel.textContent=(STATE.oppLabel||'相手')+' の手札（'+n+'枚）';
+    oppHandLabel.classList.remove('hidden'); oppHandRow.classList.remove('hidden');
+    oppHandRow.innerHTML = n
+      ? Array.from({length:n},()=>'<img class="handback" src="/card_back" alt="相手の手札（裏向き）" draggable="false">').join('')
+      : '<span class="hint">なし</span>';
   }
   bindClicks(); bindDnD();
 }
@@ -521,10 +567,18 @@ function bindClicks(){
 function showDiscard(who){
   const s=who==='you'?STATE.board.you:STATE.board.opp;
   const cards=s.discardList||[];
-  const grid=cards.map(c=>c.img?`<img src="${c.img}" title="${c.name}" alt="${c.name}">`:`<div class="ph">${c.name}</div>`).join('')||'<div class="hint">なし</div>';
+  const grid=cards.map((c,i)=>c.img
+    ? `<img data-cid="${c.id}" data-i="${i}" src="${c.img}" title="${c.name}" alt="${c.name}">`
+    : `<div class="ph" data-cid="${c.id}" data-i="${i}">${c.name}</div>`).join('')||'<div class="hint">なし</div>';
   document.getElementById('modal').innerHTML=`<h3>トラッシュ（${cards.length}枚）</h3>
     <div class="discardGrid">${grid}</div>
     <div class="acts"><button class="gray" onclick="closeModal()">閉じる</button></div>`;
+  // 各カードをクリックで詳細。‹ › でトラッシュ内の隣カードへ、戻るで一覧へ。
+  const backAct=[{label:'トラッシュ一覧へ戻る',onclick:()=>showDiscard(who)}];
+  const navList=cards.map(c=>({cid:c.id,actions:backAct}));
+  document.querySelectorAll('#modal .discardGrid [data-cid]').forEach(el=>{
+    el.onclick=()=>openCard(+el.dataset.cid, backAct, {list:navList, idx:+el.dataset.i});
+  });
   showModal();
 }
 async function openCard(cid,actions,nav){
@@ -640,8 +694,21 @@ function playEvents(events){return new Promise(res=>{
     pushLog(ev);
     let d=evDelay(ev, events.length);
     if(ev&&ev.text&&ev.text.indexOf('コイン')===0){ flipCoin(ev.text.indexOf('オモテ')>=0); d=Math.max(d,1600); }
+    // 人vs人: カード使用(PLAY)時に、中央へそのカードを約2秒表示する。
+    if(ev&&ev.cardId&&STATE&&STATE.mode==='pvp'){ showCardUse(ev.cardId); d=Math.max(d,1500); }
     setTimeout(tick, d); };
   tick();});}
+
+/* カード使用の中央アニメ（人vs人）。約2秒表示してフェードアウト。 */
+let _cardUseTimers=[];
+function showCardUse(cid){
+  const wrap=document.createElement('div');
+  wrap.className='cardUseOverlay';
+  wrap.innerHTML=`<img class="cardUseCard" src="/card_img/${cid}" alt="使用カード" onerror="this.style.display='none'">`;
+  document.body.appendChild(wrap);
+  _cardUseTimers.push(setTimeout(()=>wrap.classList.add('out'),1600));
+  _cardUseTimers.push(setTimeout(()=>wrap.remove(),2000));
+}
 
 /* ---------- 状態反映 ---------- */
 function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
