@@ -1190,9 +1190,21 @@ def api_save_agent():
         raw = _decode_upload(src, "AIエージェント")
         name = request.form.get("name") or src.filename
         meta = save_user_agent(name, src.filename, raw)
-        # ②静的に読めなかった場合、AIに初期デッキを問い合わせて保存を試みる
+        # ファイル内にデッキが無い場合のデッキ決定:
+        #   ①ユーザーが既存デッキ(user_deck_id)を指定 → それを結びつける
+        #   ②指定なし → 従来どおりAIに初期デッキを問い合わせて保存を試みる
         if not meta.get("deck"):
-            meta = _resolve_registered_agent_deck(meta["id"]) or meta
+            deck_id = (request.form.get("user_deck_id") or "").strip()
+            if deck_id:
+                try:
+                    deck = read_user_deck(deck_id)
+                except SelectionError as exc:
+                    return _selection_error(str(exc))
+                dname = next((d["name"] for d in list_user_decks()
+                              if d["id"] == deck_id), "選択デッキ")
+                meta = update_user_agent_deck(meta["id"], deck, f"選択デッキ: {dname}")
+            else:
+                meta = _resolve_registered_agent_deck(meta["id"]) or meta
         return jsonify({**meta, "cards": _deck_preview(meta["deck"]) if meta.get("deck") else None})
     except SelectionError as exc:
         return _selection_error(str(exc))
