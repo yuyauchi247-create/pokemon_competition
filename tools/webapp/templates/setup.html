@@ -14,6 +14,8 @@
   .subBox{margin:6px 0 8px 0;}
   .deckRow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0;}
   .deckRow select{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff;min-width:160px;}
+  /* グリッドは flex 行内で縮まず、自分の行を全幅に確保する（カードタイルを5列で並べる） */
+  .deckRow .deckTiles{flex:1 1 100%;}
   .deckPreview{margin-top:8px;}
   .deckPreview .deckCards{margin-left:0;}
   .disabled{opacity:.45;pointer-events:none;}
@@ -186,6 +188,12 @@ function setHidden(prefix,type,id){
 }
 const PWFIELD={player:'deckPasswordField',opponent:'oppDeckPasswordField'};
 function setDeckPw(prefix,v){const e=document.getElementById(PWFIELD[prefix]);if(e)e.value=v||'';}
+// 表紙はデッキ内の代表ポケモンのカード画像。無い/非公開はカード裏面。
+function coverImg(cards){
+  if(!cards||!cards.length) return null;
+  const poke=cards.find(c=>c.cardType==='POKEMON'&&c.img);
+  return (poke&&poke.img) || (cards.find(c=>c.img)||{}).img || null;
+}
 function initDeckPicker(prefix){
   const typeSel=document.querySelector(`.deckType[data-prefix="${prefix}"]`);
   const tiles=document.querySelector(`.deckTiles[data-prefix="${prefix}"]`);
@@ -215,7 +223,7 @@ function initDeckPicker(prefix){
     const ds=decksFor(type);
     tiles.innerHTML=ds.length?ds.map(d=>{
       const dis=d.hasBasic===false;
-      return `<div class="deckTile${dis?' disabled':''}" data-id="${d.id}">${d.private?'<span class="lock">🔒</span>':''}<div class="box">🃏</div><div class="dknm">${d.name}${dis?'<br><small>⚠たね無し</small>':''}</div></div>`;
+      return `<div class="deckTile${dis?' disabled':''}" data-id="${d.id}">${d.private?'<span class="lock">🔒</span>':''}<img class="cover" src="${coverImg(d.cards)||'/card_back'}" alt="" loading="lazy"><div class="dknm">${d.name}${dis?'<br><small>⚠たね無し</small>':''}</div></div>`;
     }).join('') : '<div class="hint">デッキがありません。</div>';
     tiles.querySelectorAll('.deckTile').forEach(t=>{const d=ds.find(x=>String(x.id)===t.dataset.id);t.onclick=()=>selectDeck(d);});
     const first=ds.find(d=>d.hasBasic!==false);

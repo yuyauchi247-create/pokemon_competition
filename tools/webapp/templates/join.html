@@ -37,6 +37,12 @@
 const GID=new URLSearchParams(location.search).get('gid')||'';
 function jmsg(m=''){document.getElementById('joinMsg').textContent=m;}
 let USER_DECKS=[];
+// 表紙はデッキ内の代表ポケモンのカード画像。無い/非公開はカード裏面。
+function coverImg(cards){
+  if(!cards||!cards.length) return null;
+  const poke=cards.find(c=>c.cardType==='POKEMON'&&c.img);
+  return (poke&&poke.img) || (cards.find(c=>c.img)||{}).img || null;
+}
 function jCardsHtml(cards){
   return '<div class="deckCards">'+(cards||[]).map(c=>`<div class="miniCard" data-cid="${c.id}" title="${c.name||''}×${c.count}（クリックで詳細）">${c.img?`<img src="${c.img}" loading="lazy" alt="">`:`<div class="ph">${c.name||''}</div>`}<div class="cnt">×${c.count}</div></div>`).join('')+'</div>';
 }
@@ -67,7 +73,7 @@ function renderUserDeckTiles(decks){
   const box=document.getElementById('userDeckTiles');
   if(!USER_DECKS.length){box.innerHTML='<small>デッキがまだありません。</small>';return;}
   box.innerHTML=USER_DECKS.map(d=>{const dis=d.hasBasic===false;
-    return `<div class="deckTile${dis?' disabled':''}" data-id="${d.id}">${d.private?'<span class="lock">🔒</span>':''}<div class="box">🃏</div><div class="dknm">${d.name}${dis?'<br><small>⚠たね無し</small>':''}</div></div>`;}).join('');
+    return `<div class="deckTile${dis?' disabled':''}" data-id="${d.id}">${d.private?'<span class="lock">🔒</span>':''}<img class="cover" src="${coverImg(d.cards)||'/card_back'}" alt="" loading="lazy"><div class="dknm">${d.name}${dis?'<br><small>⚠たね無し</small>':''}</div></div>`;}).join('');
   box.querySelectorAll('.deckTile').forEach(t=>{const d=USER_DECKS.find(x=>String(x.id)===t.dataset.id);t.onclick=()=>selectUserDeck(d);});
 }
 
