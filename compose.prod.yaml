@@ -14,8 +14,10 @@ services:
     environment:
       POKECA_WEBAPP_HOST: "0.0.0.0"
       POKECA_WEBAPP_PORT: "5000"
-      # 公開サーバーでは AI コードのアップロード(exec)を必ず無効化する
-      POKECA_ALLOW_AGENT_UPLOAD: "0"
+      # 注意: AIコードのアップロードは exec を伴い RCE リスクがある。
+      # 本番は Basic 認証(Caddy)で保護される前提で、ユーザー判断により有効化している。
+      # 信頼できる相手にのみ Basic 認証情報を渡すこと。無効化する場合は "0" に戻す。
+      POKECA_ALLOW_AGENT_UPLOAD: "1"
     # libcg.so は ctypes のプロセスグローバル状態を使うため並行実行は不可。
     # 1 worker / 1 thread で全リクエストを直列化する。
     # 総当たり戦は1リクエストで長時間かかるため timeout を長めに取る。

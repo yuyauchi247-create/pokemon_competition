@@ -6,11 +6,18 @@
 {% endblock %}
 
 {% block content %}
+<style>
+  .deckPickList{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;margin:10px 0}
+  .deckPick{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;cursor:pointer}
+  .deckPick:hover{background:#f3f7fb}
+  .deckPick input{width:16px;height:16px}
+</style>
 <div class="page">
   <div class="crumb"><a href="/">ホーム</a> › AIエージェント登録</div>
   <h2 class="pageTitle">AIエージェント登録</h2>
   <p class="pageLead">対戦相手として使うAI（<code>agent(obs_dict)</code> を持つ .py、または Kaggleの .ipynb）を登録します。
-    1ファイルでデッキとAIの両方を読み込みます。登録したAIは「対戦」画面で選べます。</p>
+    ファイル内にデッキ注記があればそれを読み込み、<b>無い場合は既存の保存済みデッキから結びつけるものを選べます</b>。
+    登録したAIは「対戦」画面で選べます。</p>
 
   {% if allow_upload %}
   <div class="listItem" style="margin-bottom:18px">
@@ -68,15 +75,41 @@ function cardsHtml(cards){
     return `<div class="miniCard" title="${c.name||''}×${c.count}">${inner}<div class="cnt">×${c.count}</div></div>`;
   }).join('')+'</div>';
 }
-async function doSave(file,name){
+async function doSave(file,name,deckId){
   const fd=new FormData();fd.append('agent_file',file);fd.append('name',name);
+  if(deckId)fd.append('user_deck_id',deckId);   // ファイルにデッキが無いとき結びつける既存デッキ
   const r=await fetch('/api/agents',{method:'POST',body:fd});
   const d=await r.json();
   closeModal();
   if(d.error){rmsg(d.error);return;}
-  rmsg('登録しました: '+d.name,false);
+  rmsg('登録しました: '+d.name+'（デッキ取得元: '+(d.deck_source||'-')+'）',false);
   document.getElementById('agentName').value='';document.getElementById('agentFile').value='';
   refresh();
+}
+// ファイル内にデッキが無い場合: 既存デッキを選ばせるモーダル
+async function pickDeckAndSave(file,name){
+  let decks=[];
+  try{ const cfg=await get('/api/decks'); decks=cfg.userDecks||[]; }catch(e){}
+  const opts = decks.length
+    ? decks.map(d=>`<label class="deckPick"><input type="radio" name="bindDeck" value="${d.id}"><span>${d.name}${d.visibility==='private'?' 🔒':''}</span></label>`).join('')
+    : '<div class="hint">保存済みデッキがありません。先に「デッキ作成」でデッキを作るか、AIに決めさせてください。</div>';
+  document.getElementById('modal').innerHTML=`
+    <h3>このAIにはデッキが含まれていません</h3>
+    <div class="mrow">名前: <b>${name}</b><br>結びつける既存デッキを選んでください。</div>
+    <div class="deckPickList">${opts}</div>
+    <div id="bindMsg" style="color:#e0556b;font-weight:700;font-size:13px;min-height:16px"></div>
+    <div class="acts">
+      <button id="bindReg">選んだデッキで登録</button>
+      <button class="gray" id="aiReg">AIに決めさせる</button>
+      <button class="gray" onclick="closeModal()">やめる</button>
+    </div>`;
+  document.getElementById('bindReg').onclick=()=>{
+    const sel=document.querySelector('input[name="bindDeck"]:checked');
+    if(!sel){document.getElementById('bindMsg').textContent='デッキを選択してください。';return;}
+    doSave(file,name,sel.value);
+  };
+  document.getElementById('aiReg').onclick=()=>doSave(file,name);
+  showModal();
 }
 const regForm=document.getElementById('regForm');
 if(regForm){
@@ -93,7 +126,9 @@ if(regForm){
     const info=await r.json();
     if(info.error){rmsg(info.error);return;}
     rmsg('');
-    // 確認モーダル
+    // ファイル内にデッキが無ければ、既存デッキを選ばせる
+    if(!info.deck){ pickDeckAndSave(file,name); return; }
+    // デッキあり: 確認モーダル
     document.getElementById('modal').innerHTML=`
       <h3>このデッキ内容で登録しますか？</h3>
       <div class="mrow">名前: <b>${name}</b><br>デッキ取得元: ${info.deck_source}</div>
