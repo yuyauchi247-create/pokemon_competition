@@ -674,6 +674,16 @@ def _advance_until_human(g):
             g["pvp_log"][0].extend(evs)
             g["pvp_log"][1].extend(evs1 if evs1 is not None else evs)
             g["pvp_last"] = (evs, evs1 if evs1 is not None else evs)
+        # 手札キャッシュの維持: 行動後の obs で見えている手札をライブで上書きする。
+        # （手番交代直前に出したカード/付けたエネが手札に残って見えるズレを抑える）
+        try:
+            if ob_.current:
+                for _i in range(len(ob_.current.players)):
+                    _ph = ob_.current.players[_i].hand
+                    if _ph is not None:
+                        g["hand_cache"][_i] = [card_meta(c.id) for c in _ph]
+        except Exception:
+            pass
         if record_step:
             try:
                 board = _frame_board(g)
