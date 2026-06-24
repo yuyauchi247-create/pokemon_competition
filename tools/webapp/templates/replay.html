@@ -14,8 +14,24 @@
   .logItem{border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:8px;cursor:pointer;background:#fbfdff;font-size:12px;}
   .logItem:hover{background:#f1f7ff;}
   .logItem.sel{border-color:var(--teal);box-shadow:0 0 0 2px #0ea5b755;}
-  .logItem .vs{font-weight:800;color:var(--ink);font-size:13px;line-height:1.3;}
-  .logItem .meta{color:var(--sub);margin-top:3px;}
+  .logItem .vs{font-weight:800;color:var(--ink);font-size:13px;line-height:1.3;cursor:pointer;}
+  .logItem .meta{color:var(--sub);margin-top:3px;cursor:pointer;}
+  .logItem .logTop{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+  .logItem .logChk{width:16px;height:16px;cursor:pointer;}
+  .logItem .dlOne{text-decoration:none;font-size:15px;color:var(--teal);padding:0 4px;border-radius:6px;}
+  .logItem .dlOne:hover{background:#e3f5f8;}
+  /* フィルタ＆ダウンロードパネル */
+  .logFilters{display:flex;flex-direction:column;gap:8px;margin-bottom:10px;padding:10px;border:1px solid var(--line);border-radius:12px;background:#fbfdff;}
+  .logFilters input[type=search],.logFilters input[type=date]{border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px;}
+  .logFilters .fltRow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--sub);}
+  .logFilters .fltRow label{font-weight:700;color:#46566b;}
+  .logFilters #dlSelected{font-size:12px;padding:8px 10px;}
+  .logFilters #dlSelected:disabled{opacity:.5;pointer-events:none;}
+  .dlProgress{display:flex;align-items:center;gap:8px;margin-top:4px;}
+  .dlProgress.hidden{display:none;}
+  .dlProgress .bar{flex:1;height:10px;border-radius:6px;background:#e3ecf5;overflow:hidden;}
+  .dlProgress .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#0ea5b7,#2bd07a);transition:width .12s;}
+  .dlProgress .pct{font-size:11px;color:var(--sub);font-weight:700;min-width:48px;text-align:right;}
   .repMeta{font-weight:800;color:var(--ink);margin-bottom:8px;}
   .repControls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);
     border-left:4px solid var(--teal);border-radius:14px;padding:12px;margin-top:12px;box-shadow:0 4px 18px #0b346b0a;}
@@ -78,6 +94,17 @@
 <div class="replayWrap">
   <aside class="logListPanel">
     <h3>対戦ログ一覧</h3>
+    <div class="logFilters">
+      <input type="search" id="fltText" placeholder="🔍 デッキ/AI名で絞り込み">
+      <div class="fltRow"><label>期間</label>
+        <input type="date" id="fltFrom"><span>〜</span><input type="date" id="fltTo"></div>
+      <div class="fltRow">
+        <label><input type="checkbox" id="fltSelectAll"> 表示中をすべて選択</label>
+        <span class="hint" id="fltCount"></span>
+      </div>
+      <button type="button" id="dlSelected" disabled>⬇ 選択をZIPでダウンロード</button>
+      <div class="dlProgress hidden" id="dlProgress"><div class="bar"><i></i></div><span class="pct"></span></div>
+    </div>
     <div id="logList"><div class="hint">読み込み中…</div></div>
   </aside>
   <div>
@@ -189,19 +216,95 @@ async function loadLog(file, el){
   idx=0; showFrame(0);
 }
 function fmtTime(s){if(!s)return '';return s.replace('T',' ').split('.')[0]+' UTC';}
-async function loadList(){
-  const d=await get('/api/logs');
-  const box=document.getElementById('logList');
-  if(!d.logs||!d.logs.length){box.innerHTML='<div class="hint">保存された対戦ログがありません。対戦を最後まで進めると保存されます。</div>';return;}
-  box.innerHTML='';
-  d.logs.forEach(l=>{
-    const el=document.createElement('div');el.className='logItem';
-    el.innerHTML=`<div class="vs">${l.player0}<br>vs ${l.player1}</div>
-      <div class="meta">${({human:'人 vs AI',ai:'AI vs AI',pvp:'人 vs 人'})[l.mode]||l.mode}／勝者:${l.winner}<br>${fmtTime(l.finished_at)}・${l.frames}フレーム</div>`;
-    el.onclick=()=>loadLog(l.file, el);
-    box.appendChild(el);
+
+let ALL_LOGS=[];
+// 日付(YYYY-MM-DD)・デッキ/AI名でフィルタした一覧を返す。
+function applyFilters(){
+  const txt=(document.getElementById('fltText').value||'').trim().toLowerCase();
+  const from=document.getElementById('fltFrom').value;  // YYYY-MM-DD
+  const to=document.getElementById('fltTo').value;
+  return ALL_LOGS.filter(l=>{
+    if(txt){const hay=((l.player0||'')+' '+(l.player1||'')).toLowerCase();if(hay.indexOf(txt)<0)return false;}
+    if(from||to){const d=(l.finished_at||'').slice(0,10);if(!d)return false;if(from&&d<from)return false;if(to&&d>to)return false;}
+    return true;
   });
 }
+function selectedFiles(){return [...document.querySelectorAll('.logChk:checked')].map(c=>c.dataset.file);}
+function syncDownloadBtn(){
+  const n=selectedFiles().length;
+  const btn=document.getElementById('dlSelected');
+  btn.disabled=(n===0);
+  btn.textContent=n?`⬇ 選択 ${n} 件をZIPでダウンロード`:'⬇ 選択をZIPでダウンロード';
+  const all=document.getElementById('fltSelectAll');
+  const boxes=[...document.querySelectorAll('.logChk')];
+  all.checked=boxes.length>0&&boxes.every(b=>b.checked);
+}
+function renderList(){
+  const box=document.getElementById('logList');
+  if(!ALL_LOGS.length){box.innerHTML='<div class="hint">保存された対戦ログがありません。対戦を最後まで進めると保存されます。</div>';document.getElementById('fltCount').textContent='';syncDownloadBtn();return;}
+  const filtered=applyFilters();
+  document.getElementById('fltCount').textContent=`${filtered.length} / ${ALL_LOGS.length} 件`;
+  if(!filtered.length){box.innerHTML='<div class="hint">条件に一致するログがありません。</div>';syncDownloadBtn();return;}
+  box.innerHTML='';
+  filtered.forEach(l=>{
+    const el=document.createElement('div');el.className='logItem';
+    el.innerHTML=`<div class="logTop">
+        <input type="checkbox" class="logChk" data-file="${l.file}">
+        <a class="dlOne" href="/api/logs/${encodeURIComponent(l.file)}/download" title="このログ単体をダウンロード" download>⬇</a>
+      </div>
+      <div class="vs">${l.player0}<br>vs ${l.player1}</div>
+      <div class="meta">${({human:'人 vs AI',ai:'AI vs AI',pvp:'人 vs 人'})[l.mode]||l.mode}／勝者:${l.winner}<br>${fmtTime(l.finished_at)}・${l.frames}フレーム</div>`;
+    el.querySelector('.vs').onclick=()=>loadLog(l.file, el);
+    el.querySelector('.meta').onclick=()=>loadLog(l.file, el);
+    el.querySelector('.logChk').onchange=syncDownloadBtn;
+    el.querySelector('.dlOne').onclick=e=>e.stopPropagation();
+    box.appendChild(el);
+  });
+  syncDownloadBtn();
+}
+async function downloadZip(){
+  const files=selectedFiles();
+  if(!files.length)return;
+  const prog=document.getElementById('dlProgress');
+  const bar=prog.querySelector('i'), pct=prog.querySelector('.pct');
+  prog.classList.remove('hidden');bar.style.width='0%';pct.textContent='0%';
+  const btn=document.getElementById('dlSelected');btn.disabled=true;
+  try{
+    const res=await fetch('/api/logs/download?files='+encodeURIComponent(files.join(',')));
+    if(!res.ok){let e={};try{e=await res.json();}catch(_){}throw new Error(e.error||('HTTP '+res.status));}
+    const total=+(res.headers.get('Content-Length')||0);
+    const reader=res.body.getReader();const chunks=[];let received=0;
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      chunks.push(value);received+=value.length;
+      if(total){const p=Math.round(100*received/total);bar.style.width=p+'%';pct.textContent=p+'%';}
+      else{pct.textContent=Math.round(received/1024)+' KB';}
+    }
+    bar.style.width='100%';pct.textContent='100%';
+    const blob=new Blob(chunks,{type:'application/zip'});
+    const cd=res.headers.get('Content-Disposition')||'';
+    const m=cd.match(/filename="?([^"]+)"?/);
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download=(m&&m[1])||'battle_logs.zip';
+    document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
+    setTimeout(()=>prog.classList.add('hidden'),1500);
+  }catch(err){pct.textContent='失敗: '+(err.message||err);}
+  finally{syncDownloadBtn();}
+}
+async function loadList(){
+  const d=await get('/api/logs');
+  ALL_LOGS=d.logs||[];
+  renderList();
+}
+document.getElementById('fltText').oninput=renderList;
+document.getElementById('fltFrom').onchange=renderList;
+document.getElementById('fltTo').onchange=renderList;
+document.getElementById('fltSelectAll').onchange=e=>{
+  document.querySelectorAll('.logChk').forEach(c=>c.checked=e.target.checked);
+  syncDownloadBtn();
+};
+document.getElementById('dlSelected').onclick=downloadZip;
 renderControls();
 loadList();
 </script>

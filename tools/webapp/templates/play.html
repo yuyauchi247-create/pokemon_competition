@@ -9,8 +9,14 @@
 <div class="page">
   <div class="crumb"><a href="/">ホーム</a> › 対戦</div>
   <h2 class="pageTitle">対戦モードを選ぶ</h2>
-  <p class="pageLead">対戦の形式を選んでください。</p>
+  <p class="pageLead">対戦の形式を選んでください。すぐ遊ぶなら「ランダムに対戦」が1クリックで始まります。</p>
   <div class="menuGrid">
+    <a class="menuCard featured" id="randomMatch" href="#">
+      <div class="ico">🎲</div>
+      <div class="ttl">ランダムに対戦</div>
+      <div class="sub">デッキも相手AIも自動で決めて、すぐ対戦開始（あなた操作）</div>
+      <div class="sub randomMsg" id="randomMsg" style="color:#e0556b;font-weight:700"></div>
+    </a>
     <a class="menuCard" href="/setup?mode=human">
       <div class="ico">🎮</div>
       <div class="ttl">あなた vs AI</div>
@@ -43,8 +49,36 @@
 </div>
 {% endblock %}
 
+{% block head %}
+<style>
+  .menuCard.featured{border:2px solid var(--teal);background:linear-gradient(180deg,#f0fbff,#e7f6ff);box-shadow:0 6px 20px #0b9bd11a;}
+  .menuCard.featured .ico{filter:drop-shadow(0 2px 4px #0b9bd133);}
+  .menuCard.busy{opacity:.6;pointer-events:none;}
+</style>
+{% endblock %}
+
 {% block script %}
 <script>
+// ランダム対戦: 1クリックでデッキ・相手AIを自動決定して対戦開始。
+const randomCard=document.getElementById('randomMatch');
+randomCard.onclick=async(e)=>{
+  e.preventDefault();
+  if(randomCard.classList.contains('busy'))return;
+  const msg=document.getElementById('randomMsg');
+  randomCard.classList.add('busy'); msg.textContent='対戦を準備中…';
+  try{
+    const fd=new FormData();
+    fd.append('match_mode','human');
+    fd.append('random','1');
+    const r=await fetch('/api/new',{method:'POST',body:fd});
+    const ns=await r.json();
+    if(ns.error){ msg.textContent=ns.error; randomCard.classList.remove('busy'); return; }
+    location.href='/battle?gid='+encodeURIComponent(ns.gid);
+  }catch(err){
+    msg.textContent='対戦の開始に失敗しました。もう一度お試しください。';
+    randomCard.classList.remove('busy');
+  }
+};
 function fmtAge(s){
   if(s==null)return '';
   if(s<60)return `${s}秒前`;

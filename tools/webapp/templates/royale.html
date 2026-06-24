@@ -88,18 +88,34 @@
     </div>
   </section>
 
-  <!-- あなたのデッキ -->
+  <!-- 挑戦者 -->
   <section id="deckSection">
-    <h3>🃏 あなたのデッキ</h3>
+    <h3>🎯 挑戦者</h3>
     <div class="deckRow">
-      <select id="deckType">
-        <option value="user">保存済みデッキ</option>
-        <option value="agent">登録AIのデッキ</option>
-      </select>
-      <select id="deckChoice"></select>
-      <button type="button" class="gray" onclick="location.href='/builder'">デッキを作成</button>
+      <label><input type="radio" name="rlChallenger" value="human" checked> 自分で挑戦</label>
+      <label><input type="radio" name="rlChallenger" value="agent"> 登録AIで挑戦（観戦）</label>
     </div>
-    <div id="deckPreview" class="deckPreview"></div>
+
+    <!-- 自分で挑戦: デッキ選択 -->
+    <div id="humanDeckBox">
+      <div class="deckRow">
+        <select id="deckType">
+          <option value="user">保存済みデッキ</option>
+          <option value="agent">登録AIのデッキ</option>
+        </select>
+        <select id="deckChoice"></select>
+        <button type="button" class="gray" onclick="location.href='/builder'">デッキを作成</button>
+      </div>
+      <div id="deckPreview" class="deckPreview"></div>
+    </div>
+
+    <!-- 登録AIで挑戦: 挑戦するAIを選ぶ（そのAI自身のデッキで戦う） -->
+    <div id="agentChallengerBox" style="display:none">
+      <div class="deckRow">
+        <select id="challengerAgent"></select>
+      </div>
+      <p class="lead" style="margin:4px 0 0;font-size:13px">選んだ登録AIが自分のデッキで上位5体に自動で挑戦します（AI vs AIを観戦）。</p>
+    </div>
   </section>
 
   <!-- 開始 / 殿堂入り登録 -->
@@ -213,21 +229,51 @@ function chosenDeck(){
   return id?{mode:type,id}:null;
 }
 
+/* ---- 挑戦者（自分 / 登録AI） ---- */
+function challengerMode(){
+  const r=document.querySelector('input[name="rlChallenger"]:checked');
+  return r?r.value:'human';
+}
+function populateChallengerAgents(){
+  const sel=document.getElementById('challengerAgent');
+  if(!sel)return;
+  const prev=sel.value;
+  const list=AGENTS||[];
+  sel.innerHTML=list.length?list.map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('')
+    :'<option value="">（登録AIがありません。「AIエージェント登録」から追加）</option>';
+  if(prev){const o=[...sel.options].find(x=>x.value===prev);if(o)sel.value=prev;}
+}
+function syncChallengerUI(){
+  const mode=challengerMode();
+  document.getElementById('humanDeckBox').style.display=(mode==='human')?'':'none';
+  document.getElementById('agentChallengerBox').style.display=(mode==='agent')?'':'none';
+  if(mode==='agent') populateChallengerAgents();
+}
+
 /* ---- 挑戦開始 ---- */
 async function startBattle(){
   setMsg('');
   if(progress>=STEPS.length)return;
-  const deck=chosenDeck();
-  if(!deck){setMsg('あなたのデッキを選択してください。');return;}
   const opp=STEPS[progress];
   const fd=new FormData();
-  fd.append('match_mode','human');
   fd.append('seed',String(Math.floor(Math.random()*1e9)));
-  fd.append('deck_mode',deck.mode);
-  if(deck.mode==='user') fd.append('user_deck_id',deck.id);
-  else fd.append('deck_agent_id',deck.id);
   fd.append('opponent_type','registered');
   fd.append('opponent_agent_id',opp.id);
+  const mode=challengerMode();
+  if(mode==='agent'){
+    const aid=document.getElementById('challengerAgent').value;
+    if(!aid){setMsg('挑戦する登録AIを選択してください。');return;}
+    fd.append('match_mode','ai');          // AI vs AI（挑戦者AI=player0）を観戦
+    fd.append('player_type','registered');
+    fd.append('player_agent_id',aid);
+  }else{
+    const deck=chosenDeck();
+    if(!deck){setMsg('あなたのデッキを選択してください。');return;}
+    fd.append('match_mode','human');
+    fd.append('deck_mode',deck.mode);
+    if(deck.mode==='user') fd.append('user_deck_id',deck.id);
+    else fd.append('deck_agent_id',deck.id);
+  }
   const btn=document.getElementById('startBtn');btn.disabled=true;setMsg('対戦を準備中…');
   try{
     const r=await fetch('/api/new',{method:'POST',body:fd});
@@ -312,6 +358,7 @@ function handleClearedParam(){
     if(confirm('挑戦の進行状況を最初（第1戦）に戻します。よろしいですか？')){setProgress(0);renderLadder();}
   });
   document.getElementById('refreshBtn').addEventListener('click',refreshRanking);
+  document.querySelectorAll('input[name="rlChallenger"]').forEach(r=>r.addEventListener('change',syncChallengerUI));
   // 既に更新ジョブが走っていれば進捗表示を再開
   get('/api/royale/refresh').then(s=>{if(s&&s.running){document.getElementById('refreshBtn').disabled=true;pollRefresh();}}).catch(()=>{});
   loadHof();
@@ -331,6 +378,7 @@ function handleClearedParam(){
     AGENTS=c.agents||[];
     const ts=document.getElementById('deckType');
     if(ts&&ts.value==='agent') ts.dispatchEvent(new Event('change'));
+    if(challengerMode()==='agent') populateChallengerAgents();
   }).catch(()=>{});
 })();
 </script>
