@@ -105,6 +105,15 @@
   @keyframes gtoast{0%{opacity:0;transform:translate(-50%,-12px) scale(.92);}14%{opacity:1;transform:translate(-50%,0) scale(1);}82%{opacity:1;}100%{opacity:0;transform:translate(-50%,-8px);}}
   .pcard.actpulse{outline:3px solid #2bd07a;outline-offset:2px;border-radius:10px;animation:actPulse .9s ease 2;}
   @keyframes actPulse{0%,100%{box-shadow:0 0 0 0 rgba(43,208,122,0);}50%{box-shadow:0 0 0 9px rgba(43,208,122,.5);}}
+  /* 山札→手札のドロー演出：裏面カードが山札から手札へ飛ぶ */
+  .flyCard{position:fixed;z-index:60;border-radius:5px;border:1px solid #fff;box-shadow:0 4px 14px #0b346b55;
+    opacity:.35;pointer-events:none;will-change:transform,opacity;
+    transition:transform .46s cubic-bezier(.2,.8,.3,1),opacity .46s ease;}
+  .flyCard.land{opacity:0;}
+  /* 場に出たポケモンのポップ表示（バトル場→ベンチの順で見せる） */
+  .pcard.placePop{animation:placePop .42s cubic-bezier(.2,1.5,.4,1) both;}
+  @keyframes placePop{0%{opacity:0;transform:scale(.55) translateY(10px);}60%{opacity:1;transform:scale(1.08);}100%{opacity:1;transform:scale(1);}}
+  .zone-bench.benchReveal{opacity:0;}
   /* 対戦後の「もう一度対戦」 */
   #banner .bmsg{font-size:1.05em;font-weight:900;}
   #banner .bask{margin-top:6px;font-size:14px;font-weight:700;opacity:.9;}
@@ -839,6 +848,82 @@ function attackerSide(events){for(const e of (events||[])){if(e&&e.text&&e.text.
 function lunge(who){const zone=document.getElementById((who==='you'?'you':'opp')+'Active');const el=zone&&zone.querySelector('.pcard');if(!el)return;const cl=who==='you'?'lungeUp':'lungeDown';el.classList.add(cl);setTimeout(()=>el.classList.remove(cl),430);}
 function koDmg(events,name){for(const e of (events||[])){if(e&&e.text&&name&&e.text.indexOf('「'+name+'」')>=0){const m=e.text.match(/(\d+)\s*ダメージ/);if(m)return +m[1];}}return 0;}
 
+/* ===== 山札→手札のドロー演出 ===== */
+function _handCount(s){if(!s)return 0;return Array.isArray(s.hand)?s.hand.length:(s.handCount||0);}
+function _deckRect(who){const side=document.getElementById(who==='you'?'youSide':'oppSide');const el=side&&side.querySelector('.deckStack');return el?el.getBoundingClientRect():null;}
+function _handRect(who){const h=document.getElementById(who==='you'?'youHand':'oppHand');return h?h.getBoundingClientRect():null;}
+// 山札が減り手札が増えた＝デッキから手札に加わった枚数（通常ドロー/効果ドロー/サーチを問わず）
+function detectDraws(oldB,newB){
+  const out=[];
+  ['you','opp'].forEach(who=>{
+    const os=oldB&&oldB[who], nb=newB&&newB[who];
+    if(!os||!nb)return;
+    const dDeck=(os.deck||0)-(nb.deck||0);
+    const dHand=_handCount(nb)-_handCount(os);
+    if(dDeck>0&&dHand>0) out.push({who, n:Math.min(dHand,dDeck,8)});  // 複数枚も枚数ぶん飛ばす
+  });
+  return out;
+}
+// 裏面カードを山札から手札へ飛ばす（n枚は少しずつ時間差で）
+async function animateDraw(who,n){
+  const from=_deckRect(who), to=_handRect(who);
+  if(!from||!to||n<=0)return;
+  const W=44,H=Math.round(W*1.4);
+  const sx=from.left+from.width/2-W/2, sy=from.top+from.height/2-H/2;
+  for(let i=0;i<n;i++){
+    const card=document.createElement('img');
+    card.src='/card_back'; card.alt=''; card.className='flyCard';
+    card.style.width=W+'px'; card.style.left=sx+'px'; card.style.top=sy+'px';
+    document.body.appendChild(card);
+    const tx=to.left+Math.min(Math.max(0,to.width-W-8), 10+i*20);
+    const ty=to.top+to.height/2-H/2;
+    requestAnimationFrame(()=>{card.style.opacity='1';card.style.transform=`translate(${tx-sx}px,${ty-sy}px)`;});
+    setTimeout(()=>{card.classList.add('land');setTimeout(()=>card.remove(),300);},480);
+    await sleep(95);
+  }
+}
+async function animateDraws(prev,newB){
+  const ds=detectDraws(prev,newB);
+  if(!ds.length)return;
+  await Promise.all(ds.map(d=>animateDraw(d.who,d.n)));
+  await sleep(120);
+}
+
+/* ===== 場に出す演出（バトル場→ベンチの順） ===== */
+function _activeOf(s){const a=s&&s.active;return (a&&a.id)?a:null;}  // active はカードdict or null
+function _benchCount(s){return (s&&s.bench)?s.bench.filter(Boolean).length:0;}
+function _popActive(who){const z=document.getElementById((who==='you'?'you':'opp')+'Active');const el=z&&z.querySelector('.pcard');if(el){el.classList.remove('placePop');void el.offsetWidth;el.classList.add('placePop');}}
+// 1手で「バトル場の新規配置」と「ベンチ増加」を検出し、バトル場→ベンチの順で見せる。
+// renderBoard() 済みの前提で、ベンチを一旦隠し→バトル場をポップ→ベンチをポップする。
+async function animatePlacements(prev,newB){
+  let did=false;
+  for(const who of ['you','opp']){
+    const os=prev&&prev[who], nb=newB&&newB[who];
+    if(!nb)continue;
+    const newActive=!_activeOf(os)&&!!_activeOf(nb);
+    const benchAdded=_benchCount(nb)-_benchCount(os||{});
+    if(newActive&&benchAdded>0){
+      // セットアップ等：バトル場を先に見せ、ベンチは後から
+      const bench=document.getElementById((who==='you'?'you':'opp')+'Bench');
+      if(bench)bench.classList.add('benchReveal');
+      _popActive(who); did=true;
+      await sleep(560);
+      if(bench){
+        bench.classList.remove('benchReveal');
+        bench.querySelectorAll('.pcard').forEach((el,i)=>{el.style.animationDelay=(i*90)+'ms';el.classList.add('placePop');});
+        await sleep(260+benchAdded*90);
+      }
+    }else if(newActive){
+      _popActive(who); did=true; await sleep(140);
+    }else if(benchAdded>0){
+      const bench=document.getElementById((who==='you'?'you':'opp')+'Bench');
+      if(bench)bench.querySelectorAll('.pcard').forEach((el,i)=>{if(i>=_benchCount(os||{})){el.classList.add('placePop');}});
+      did=true; await sleep(160);
+    }
+  }
+  return did;
+}
+
 async function playAiSteps(ns){
   // AIの行動を1手ずつ（盤面も段階的に）約1秒間隔で再生する
   const ask=document.getElementById('ask');
@@ -867,6 +952,9 @@ async function playAiSteps(ns){
     const dmgs=human?detectDamage(prev, st.board):[];
     STATE=Object.assign({},ns,{board:st.board,select:null,result:-1});
     renderBoard();
+    // 2.5) 場に出す演出（バトル場→ベンチの順）＋山札→手札のドロー演出
+    await animatePlacements(prev, st.board);
+    await animateDraws(prev, st.board);
     if(dmgs.length){
       // 「Nダメージ！」を大きく出し、しっかり読める“間”を置いてからHPをじわじわ減らす
       dmgs.forEach(d=>{const el=_tileEl(d.who,d.area,d.pos,d.cid);if(el){setHp(el,d.oldHp,d.maxHp);dmgCallout(el,d.oldHp-d.newHp);hitFlash(el);}});
@@ -888,8 +976,17 @@ async function playAiSteps(ns){
 }
 async function apply(ns,playback){
   const steps=(playback && ns.mode!=='ai' && ns.aiSteps && ns.aiSteps.length)?ns.aiSteps:null;
+  const prevBoard=STATE&&STATE.board;        // この適用前に表示していた盤面
   if(steps){busy=true;await playAiSteps(ns);busy=false;}
+  const beforeFinal=(STATE&&STATE.board)||prevBoard;  // 最終盤面の直前（aiStepsがあれば最後の手番盤面）
   STATE=ns; renderBoard(); renderBanner();
+  // 人の対戦：最終盤面で「自分の場出し（バトル場→ベンチ順）」「自分のドロー」を演出する
+  if(playback && ns.mode!=='ai' && ns.board){
+    busy=true;
+    await animatePlacements(beforeFinal, ns.board);
+    await animateDraws(beforeFinal, ns.board);
+    busy=false;
+  }
   if(STATE.mode==='ai'){
     document.getElementById('ask').classList.add('hidden');
     if(playback&&!steps){busy=true;await playEvents(ns.events);busy=false;}
@@ -929,7 +1026,12 @@ function schedulePvpPoll(ms){
 }
 async function applyPvp(ns){
   if(ns&&ns.status==='waiting'){STATE=ns;renderWaiting(ns);schedulePvpPoll(1500);return;}
+  const prevBoard=STATE&&STATE.board;
   STATE=ns;renderBoard();renderBanner();
+  // 場出し（バトル場→ベンチ順）＋ドロー演出（ver変化時に1回だけ）
+  if(ns.ver!==lastVer && ns.board){
+    busy=true; await animatePlacements(prevBoard, ns.board); await animateDraws(prevBoard, ns.board); busy=false;
+  }
   document.getElementById('aiControls').classList.add('hidden');
   const ask=document.getElementById('ask');ask.classList.remove('hidden');
   // ログ欄は累積ログ(seq)で冪等に再構築（取りこぼし無し・二重表示無し）

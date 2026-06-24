@@ -10,6 +10,7 @@
     切り替えてから cg を呼ぶ。Flask はシングルスレッドで動かすため、
     ptr の切り替えはリクエスト間で競合しない。
 """
+import io
 import json
 import os
 import random
@@ -19,6 +20,7 @@ import sys
 import tempfile
 import time
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -363,6 +365,46 @@ def _selected_opponent(gid, default_deck):
         gid, "opponent", mode, "agent_file", "opponent_agent_id", default_deck)
     _require_basic_deck(deck)
     return "custom", agent, deck, label
+
+
+def _random_player_deck(rng):
+    """ランダム対戦用: 公開かつたね有りの保存済みデッキからランダムに選ぶ。
+    無ければサンプルデッキにフォールバック。"""
+    cands = []
+    for d in list_user_decks():
+        if d.get("visibility") == "private":
+            continue  # 非公開はパスワードが要るのでランダム対象外
+        try:
+            deck = read_user_deck(d["id"])
+        except SelectionError:
+            continue
+        if deck_has_basic(deck):
+            cands.append((deck, d["name"]))
+    if cands:
+        deck, name = rng.choice(cands)
+        return list(deck), name
+    sid = rng.choice(SAMPLE_DECKS)["id"]
+    return read_sample_deck(sid), "サンプルデッキ"
+
+
+def _random_opponent(gid, rng, default_deck):
+    """ランダム対戦用: 登録AIからランダムに相手を選ぶ。
+    読み込み/デッキ検証に失敗する個体は飛ばし、全滅ならルールベースAIにフォールバック。"""
+    agents = list(list_user_agents())
+    rng.shuffle(agents)
+    for a in agents:
+        aid = a["id"]
+        try:
+            code = read_user_agent_code(aid)
+            forced = read_user_agent_deck(aid)
+            agent, deck, label = _materialize_agent(
+                gid, "opponent", code, f"登録AI（{a['name']}）",
+                default_deck, forced_deck=forced, extra_src=user_agent_dir(aid))
+            _require_basic_deck(deck)
+            return "custom", agent, deck, label
+        except Exception:
+            continue
+    return "rule", None, list(default_deck), "ルールベースAI"
 
 
 def _selected_player_agent_side(gid):
@@ -1120,6 +1162,51 @@ def api_log(name):
     return jsonify(_replay_to_view(d))
 
 
+def _is_safe_log_name(name):
+    return bool(name) and name.replace("_", "").replace("-", "").isalnum()
+
+
+@app.route("/api/logs/<name>/download", methods=["GET"])
+def api_log_download(name):
+    """1対戦ぶんのログを生の replay.json ファイルとしてダウンロードさせる。"""
+    if not _is_safe_log_name(name):
+        abort(404)
+    p = LOGS_DIR / (name + ".json")
+    if not p.exists():
+        abort(404)
+    return send_from_directory(LOGS_DIR, name + ".json", as_attachment=True,
+                               download_name=name + ".json",
+                               mimetype="application/json")
+
+
+@app.route("/api/logs/download", methods=["GET"])
+def api_logs_download_zip():
+    """複数の対戦ログをまとめて1つの ZIP でダウンロードさせる。
+    クエリ files=名前1,名前2,... で対象を指定。進捗バー用に Content-Length を付与する。"""
+    raw = (request.args.get("files") or "").strip()
+    names = [n for n in (s.strip() for s in raw.split(",")) if n]
+    names = [n for n in names if _is_safe_log_name(n)]
+    if not names:
+        return jsonify({"error": "ダウンロードするログを指定してください。"}), 400
+    buf = io.BytesIO()
+    added = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for n in names:
+            p = LOGS_DIR / (n + ".json")
+            if p.exists():
+                zf.write(p, arcname=n + ".json")
+                added += 1
+    if not added:
+        return jsonify({"error": "対象のログが見つかりませんでした。"}), 404
+    data = buf.getvalue()
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    fname = f"battle_logs_{ts}.zip"
+    resp = Response(data, mimetype="application/zip")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    resp.headers["Content-Length"] = str(len(data))
+    return resp
+
+
 _AGENTS_CARDS_CACHE = {"sig": None, "data": None}
 
 
@@ -1575,14 +1662,21 @@ def api_new():
         return jsonify({"gid": gid, "token": token, "role": "host", "status": "waiting"})
 
     # --- 人 vs AI / AI vs AI ---
+    is_random = (request.form.get("random") or "").lower() in ("1", "true", "on", "yes")
     try:
         if match_mode == "ai":
             player_type, player_agent, player_deck, player_label = _selected_player_agent_side(gid)
             deck_label = player_label
+            opponent_type, opponent_agent, opponent_deck, opponent_label = _selected_opponent(gid, player_deck)
+        elif is_random:
+            # ランダム対戦: 自分のデッキも相手AIもサーバが無作為に決め、1操作で開始する。
+            player_type, player_agent, player_label = "human", None, "あなた"
+            player_deck, deck_label = _random_player_deck(g["rng"])
+            opponent_type, opponent_agent, opponent_deck, opponent_label = _random_opponent(gid, g["rng"], player_deck)
         else:
             player_deck, deck_label = _selected_player_deck()
             player_type, player_agent, player_label = "human", None, "あなた"
-        opponent_type, opponent_agent, opponent_deck, opponent_label = _selected_opponent(gid, player_deck)
+            opponent_type, opponent_agent, opponent_deck, opponent_label = _selected_opponent(gid, player_deck)
     except SelectionError as exc:
         _destroy_game(gid)
         return _selection_error(str(exc))
