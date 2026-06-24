@@ -19,6 +19,9 @@
   .deckPreview{margin-top:8px;}
   .deckPreview .deckCards{margin-left:0;}
   .disabled{opacity:.45;pointer-events:none;}
+  /* 登録AIをタイルで選ぶ（デッキ一覧と同じ見た目）。数が多いのでスクロール枠に収める。 */
+  .agentTiles{max-height:360px;overflow:auto;margin-left:24px;padding:4px 4px 2px;
+    border:1px solid var(--line);border-radius:12px;background:#fbfdff;}
 </style>
 {% endblock %}
 
@@ -196,7 +199,7 @@ function coverImg(cards){
 }
 function initDeckPicker(prefix){
   const typeSel=document.querySelector(`.deckType[data-prefix="${prefix}"]`);
-  const tiles=document.querySelector(`.deckTiles[data-prefix="${prefix}"]`);
+  const tiles=document.querySelector(`.deckTiles[data-prefix="${prefix}"]:not(.agentTiles)`);
   const detail=document.querySelector(`.deckPreview[data-prefix="${prefix}"]`);
   if(!typeSel||!tiles)return;
   function showCards(cards){ detail.innerHTML=cardsHtml(cards); bindCardDetail(detail); }
@@ -237,12 +240,35 @@ function fillAgentSelects(){
   document.querySelectorAll('.agentSel').forEach(sel=>{
     sel.innerHTML=AGENTS.length?AGENTS.map(a=>`<option value="${a.id}">${a.name}</option>`).join('')
       :'<option value="">（登録AIがありません）</option>';
-    if(!sel.nextElementSibling||!sel.nextElementSibling.classList.contains('agentDeck')){
-      const div=document.createElement('div');div.className='agentDeck subBox';div.dataset.prefix=sel.dataset.prefix;
-      sel.insertAdjacentElement('afterend',div);
+    sel.style.display='none';   // 選択はタイルで行う。select は値の保持にだけ使う（フォーム送信用）。
+    const prefix=sel.dataset.prefix;
+    // 並び: [select(非表示)] → [agentTiles] → [agentDeck(プレビュー)]
+    let grid=document.querySelector(`.agentTiles[data-prefix="${prefix}"]`);
+    if(!grid){
+      grid=document.createElement('div');grid.className='deckTiles agentTiles';grid.dataset.prefix=prefix;
+      sel.insertAdjacentElement('afterend',grid);
     }
-    sel.addEventListener('change',()=>showAgentDeck(sel.dataset.prefix));
+    if(!document.querySelector(`.agentDeck[data-prefix="${prefix}"]`)){
+      const div=document.createElement('div');div.className='agentDeck subBox';div.dataset.prefix=prefix;
+      grid.insertAdjacentElement('afterend',div);
+    }
+    sel.addEventListener('change',()=>showAgentDeck(prefix));
+    renderAgentTiles(prefix);
   });
+}
+function renderAgentTiles(prefix){
+  const sel=document.querySelector(`.agentSel[data-prefix="${prefix}"]`);
+  const grid=document.querySelector(`.agentTiles[data-prefix="${prefix}"]`);
+  if(!sel||!grid)return;
+  if(!AGENTS.length){grid.innerHTML='<div class="hint">登録AIがありません。「AIエージェント登録」から追加できます。</div>';return;}
+  grid.innerHTML=AGENTS.map(a=>`<div class="deckTile" data-id="${a.id}"><img class="cover" src="${coverImg(a.cards)||'/card_back'}" alt="" loading="lazy"><div class="dknm">${a.name}</div></div>`).join('');
+  grid.querySelectorAll('.deckTile').forEach(t=>t.onclick=()=>{
+    sel.value=t.dataset.id;
+    grid.querySelectorAll('.deckTile').forEach(x=>x.classList.toggle('sel',x===t));
+    sel.dispatchEvent(new Event('change'));
+  });
+  if(!sel.value && AGENTS[0]) sel.value=AGENTS[0].id;   // 既定で先頭を選択
+  grid.querySelectorAll('.deckTile').forEach(t=>t.classList.toggle('sel',t.dataset.id===sel.value));
 }
 function showAgentDeck(prefix){
   const type=val(prefix==='player'?'player_type':'opponent_type');
@@ -257,8 +283,8 @@ function syncAgentPick(prefix){
   const type=val(prefix==='player'?'player_type':'opponent_type');
   const deckBox=document.querySelector(`.deckBox[data-deck="${prefix}"]`);
   if(deckBox) deckBox.classList.toggle('disabled', type!=='rule');
-  const sel=document.querySelector(`.agentSel[data-prefix="${prefix}"]`);
-  if(sel) sel.style.display = type==='registered'?'inline-block':'none';
+  const grid=document.querySelector(`.agentTiles[data-prefix="${prefix}"]`);
+  if(grid) grid.style.display = type==='registered'?'':'none';
   const file=document.querySelector(`.agentFile[data-prefix="${prefix}"]`);
   if(file) file.style.display = type==='custom'?'block':'none';
   showAgentDeck(prefix);
