@@ -66,8 +66,8 @@
   <div class="crumb"><a href="/">ホーム</a> › <a href="/play">対戦</a> › バトルロワイヤル</div>
   <h2 class="pageTitle">👑 バトルロワイヤル</h2>
   <p class="lead">登録AIの中で<strong>勝率が高い上位5体</strong>に、<strong>5位 → 1位</strong>の順で挑戦するモードです。<br>
-  1体倒すごとに次の相手へ進めます。負けても同じ相手に何度でも再挑戦できます。<br>
-  最強（1位）まで全員を倒すと<strong>「殿堂入り」</strong>として名前を残せます。</p>
+  <strong>5連勝制</strong>：1体倒すごとに次の相手へ進めますが、<strong>1度でも負けると第1戦からやり直し</strong>です（途中の相手からは再開できません）。<br>
+  最強（1位）まで<strong>連続で全員を倒す</strong>と<strong>「殿堂入り」</strong>として名前を残せます。</p>
 
   <!-- 殿堂入りリスト -->
   <section>
@@ -342,12 +342,18 @@ async function refreshRanking(){
 
 /* ---- 初期化 ---- */
 function handleClearedParam(){
-  // /battle 勝利後に ?cleared=<step> で戻ってくる
+  // /battle から ?cleared=<step>（勝利）/ ?lost=<step>（敗北）で戻ってくる
   const u=new URLSearchParams(location.search);
   const c=parseInt(u.get('cleared')||'',10);
+  const lost=parseInt(u.get('lost')||'',10);
   if(!isNaN(c)){
     if(c===progress+1) setProgress(c);        // 想定どおりの相手を倒した
     history.replaceState(null,'',location.pathname);
+  }else if(!isNaN(lost)){
+    // 5連勝制: 1勝でも落とすと最初の相手からやり直し（進行リセット）。
+    setProgress(0);
+    history.replaceState(null,'',location.pathname);
+    setMsg('敗北したため、挑戦は第1戦からやり直しです。5連勝で殿堂入りを目指しましょう。');
   }
 }
 (async function(){

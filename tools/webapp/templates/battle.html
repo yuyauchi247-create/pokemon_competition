@@ -537,13 +537,17 @@ function renderBanner(){
   // --- バトルロワイヤル: 勝敗に応じて専用の導線を出す ---
   if(!isNaN(ROYALE)){
     const won=(STATE.result===0);
-    const bmsg=won?'🏆 突破！ クリアしました！':(STATE.result===1?'敗北… もう一度挑戦しよう':'引き分け');
-    const back=won?('/royale?cleared='+ROYALE):'/royale';
+    const lost=(STATE.result===1);
+    // 5連勝制: 勝てば次へ、負けたら最初の相手からやり直し（進行リセット）。引き分けは同じ相手に再挑戦。
+    const bmsg=won?'🏆 突破！ クリアしました！':(lost?'敗北… 最初の相手からやり直しです':'引き分け');
+    const back=won?('/royale?cleared='+ROYALE):(lost?('/royale?lost='+ROYALE):'/royale');
+    const bask=won?'次の相手が待っています。':(lost?'1勝でも落とすと振り出しに戻ります。最初の相手から挑戦し直してください。':'同じ相手に再挑戦できます。');
+    const btnLabel=won?'👑 バトルロワイヤルへ戻る（次の相手へ）':(lost?'👑 バトルロワイヤルへ戻る（最初から）':'👑 バトルロワイヤルへ戻る（再挑戦）');
     b.className=won?'win':'lose';
     b.innerHTML=`<div class="bmsg">${bmsg}</div>
-      <div class="bask">${won?'次の相手が待っています。':'同じ相手に何度でも再挑戦できます。'}</div>
+      <div class="bask">${bask}</div>
       <div class="bactions">
-        <button type="button" onclick="location.href='${back}'">${won?'👑 バトルロワイヤルへ戻る（次の相手へ）':'👑 バトルロワイヤルへ戻る（再挑戦）'}</button>
+        <button type="button" onclick="location.href='${back}'">${btnLabel}</button>
         <button type="button" class="gray" onclick="location.href='/replay'">🎬 リプレイを見る</button>
       </div>`;
     return;
