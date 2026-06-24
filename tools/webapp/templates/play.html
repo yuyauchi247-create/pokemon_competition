@@ -9,14 +9,35 @@
 <div class="page">
   <div class="crumb"><a href="/">ホーム</a> › 対戦</div>
   <h2 class="pageTitle">対戦モードを選ぶ</h2>
-  <p class="pageLead">対戦の形式を選んでください。すぐ遊ぶなら「ランダムに対戦」が1クリックで始まります。</p>
+  <p class="pageLead">対戦の形式を選んでください。</p>
+
+  <!-- ランダムな相手とすぐ対戦（自分側だけ選ぶ・相手は無作為） -->
+  <section class="randomSection">
+    <h3 class="rsTitle">🎲 ランダムな相手と対戦</h3>
+    <p class="rsLead">自分の使うものだけ選べば、相手の登録AIは無作為に選ばれてすぐ始まります。</p>
+    <div class="rsRow">
+      <label><input type="radio" name="rmSide" value="human" checked> 自分で操作する</label>
+      <label><input type="radio" name="rmSide" value="agent"> 登録AIにまかせる（観戦）</label>
+    </div>
+    <!-- 自分で操作: デッキ選択 -->
+    <div id="rmHumanBox" class="rsRow">
+      <select id="rmDeckType">
+        <option value="user">保存済みデッキ</option>
+        <option value="agent">登録AIのデッキ</option>
+      </select>
+      <select id="rmDeckChoice"></select>
+    </div>
+    <!-- 登録AIにまかせる: エージェント選択 -->
+    <div id="rmAgentBox" class="rsRow" style="display:none">
+      <select id="rmAgent"></select>
+    </div>
+    <div class="rsRow">
+      <button type="button" id="rmStart">🎲 ランダムな相手と対戦開始</button>
+      <span class="randomMsg" id="randomMsg" style="color:#e0556b;font-weight:700"></span>
+    </div>
+  </section>
+
   <div class="menuGrid">
-    <a class="menuCard featured" id="randomMatch" href="#">
-      <div class="ico">🎲</div>
-      <div class="ttl">ランダムに対戦</div>
-      <div class="sub">デッキも相手AIも自動で決めて、すぐ対戦開始（あなた操作）</div>
-      <div class="sub randomMsg" id="randomMsg" style="color:#e0556b;font-weight:700"></div>
-    </a>
     <a class="menuCard" href="/setup?mode=human">
       <div class="ico">🎮</div>
       <div class="ttl">あなた vs AI</div>
@@ -51,34 +72,80 @@
 
 {% block head %}
 <style>
-  .menuCard.featured{border:2px solid var(--teal);background:linear-gradient(180deg,#f0fbff,#e7f6ff);box-shadow:0 6px 20px #0b9bd11a;}
-  .menuCard.featured .ico{filter:drop-shadow(0 2px 4px #0b9bd133);}
-  .menuCard.busy{opacity:.6;pointer-events:none;}
+  .randomSection{border:2px solid var(--teal);background:linear-gradient(180deg,#f0fbff,#e7f6ff);
+    border-radius:16px;padding:16px 18px;margin:8px 0 18px;box-shadow:0 6px 20px #0b9bd11a;}
+  .randomSection .rsTitle{margin:0 0 4px;font-size:17px;color:var(--teal);}
+  .randomSection .rsLead{margin:0 0 10px;color:var(--sub);font-size:13px;}
+  .randomSection .rsRow{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:8px 0;}
+  .randomSection .rsRow label{font-weight:700;color:#34445a;}
+  .randomSection select{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff;min-width:200px;}
+  .randomSection #rmStart{font-size:15px;}
+  .randomSection #rmStart:disabled{opacity:.5;pointer-events:none;}
 </style>
 {% endblock %}
 
 {% block script %}
 <script>
-// ランダム対戦: 1クリックでデッキ・相手AIを自動決定して対戦開始。
-const randomCard=document.getElementById('randomMatch');
-randomCard.onclick=async(e)=>{
-  e.preventDefault();
-  if(randomCard.classList.contains('busy'))return;
+// ===== ランダムな相手と対戦（自分側は選ぶ・相手だけ無作為）=====
+let RM_USER=[], RM_AGENTS=[];
+function rmSide(){const r=document.querySelector('input[name="rmSide"]:checked');return r?r.value:'human';}
+function rmDecksFor(type){
+  if(type==='user')return RM_USER;
+  if(type==='agent')return RM_AGENTS.filter(a=>a.cards&&a.cards.length);
+  return [];
+}
+function rmRefreshDeckChoice(){
+  const type=document.getElementById('rmDeckType').value, ds=rmDecksFor(type);
+  const sel=document.getElementById('rmDeckChoice');
+  sel.innerHTML=ds.length?ds.map(d=>`<option value="${d.id}"${d.hasBasic===false?' disabled':''}>${d.name}${d.hasBasic===false?'（⚠たね無し）':''}</option>`).join('')
+    :'<option value="">（デッキがありません）</option>';
+}
+function rmRefreshAgents(){
+  const sel=document.getElementById('rmAgent');
+  sel.innerHTML=RM_AGENTS.length?RM_AGENTS.map(a=>`<option value="${a.id}">${a.name}</option>`).join('')
+    :'<option value="">（登録AIがありません）</option>';
+}
+function rmSyncUI(){
+  const side=rmSide();
+  document.getElementById('rmHumanBox').style.display=(side==='human')?'':'none';
+  document.getElementById('rmAgentBox').style.display=(side==='agent')?'':'none';
+}
+async function rmStart(){
   const msg=document.getElementById('randomMsg');
-  randomCard.classList.add('busy'); msg.textContent='対戦を準備中…';
-  try{
-    const fd=new FormData();
+  const btn=document.getElementById('rmStart');
+  const fd=new FormData();
+  fd.append('random_opponent','1');     // 相手だけ無作為
+  const side=rmSide();
+  if(side==='agent'){
+    const aid=document.getElementById('rmAgent').value;
+    if(!aid){msg.textContent='まかせる登録AIを選択してください。';return;}
+    fd.append('match_mode','ai');
+    fd.append('player_type','registered');
+    fd.append('player_agent_id',aid);
+  }else{
+    const type=document.getElementById('rmDeckType').value;
+    const id=document.getElementById('rmDeckChoice').value;
+    if(!id){msg.textContent='使うデッキを選択してください。';return;}
     fd.append('match_mode','human');
-    fd.append('random','1');
+    fd.append('deck_mode',type);
+    if(type==='user')fd.append('user_deck_id',id); else fd.append('deck_agent_id',id);
+  }
+  btn.disabled=true; msg.textContent='対戦を準備中…';
+  try{
     const r=await fetch('/api/new',{method:'POST',body:fd});
     const ns=await r.json();
-    if(ns.error){ msg.textContent=ns.error; randomCard.classList.remove('busy'); return; }
+    if(ns.error){msg.textContent=ns.error;btn.disabled=false;return;}
     location.href='/battle?gid='+encodeURIComponent(ns.gid);
-  }catch(err){
-    msg.textContent='対戦の開始に失敗しました。もう一度お試しください。';
-    randomCard.classList.remove('busy');
-  }
-};
+  }catch(err){msg.textContent='対戦の開始に失敗しました。もう一度お試しください。';btn.disabled=false;}
+}
+document.querySelectorAll('input[name="rmSide"]').forEach(r=>r.addEventListener('change',rmSyncUI));
+document.getElementById('rmDeckType').addEventListener('change',rmRefreshDeckChoice);
+document.getElementById('rmStart').addEventListener('click',rmStart);
+// デッキは軽量APIで先に、登録AIは別途取得
+get('/api/decks').then(c=>{RM_USER=c.userDecks||[];rmRefreshDeckChoice();}).catch(()=>{});
+get('/api/config').then(c=>{RM_AGENTS=c.agents||[];rmRefreshAgents();if(document.getElementById('rmDeckType').value==='agent')rmRefreshDeckChoice();}).catch(()=>{});
+rmSyncUI();
+
 function fmtAge(s){
   if(s==null)return '';
   if(s<60)return `${s}秒前`;

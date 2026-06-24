@@ -1662,21 +1662,28 @@ def api_new():
         return jsonify({"gid": gid, "token": token, "role": "host", "status": "waiting"})
 
     # --- 人 vs AI / AI vs AI ---
+    # random          : 自分も相手も無作為（完全ランダム）
+    # random_opponent : 自分側はフォームで選び、相手だけ無作為
     is_random = (request.form.get("random") or "").lower() in ("1", "true", "on", "yes")
+    is_random_opp = (request.form.get("random_opponent") or "").lower() in ("1", "true", "on", "yes")
     try:
-        if match_mode == "ai":
-            player_type, player_agent, player_deck, player_label = _selected_player_agent_side(gid)
-            deck_label = player_label
-            opponent_type, opponent_agent, opponent_deck, opponent_label = _selected_opponent(gid, player_deck)
-        elif is_random:
-            # ランダム対戦: 自分のデッキも相手AIもサーバが無作為に決め、1操作で開始する。
+        if is_random:
             player_type, player_agent, player_label = "human", None, "あなた"
             player_deck, deck_label = _random_player_deck(g["rng"])
             opponent_type, opponent_agent, opponent_deck, opponent_label = _random_opponent(gid, g["rng"], player_deck)
         else:
-            player_deck, deck_label = _selected_player_deck()
-            player_type, player_agent, player_label = "human", None, "あなた"
-            opponent_type, opponent_agent, opponent_deck, opponent_label = _selected_opponent(gid, player_deck)
+            # 自分側: 人=保存済み/登録AIのデッキ、AI観戦=登録エージェント
+            if match_mode == "ai":
+                player_type, player_agent, player_deck, player_label = _selected_player_agent_side(gid)
+                deck_label = player_label
+            else:
+                player_deck, deck_label = _selected_player_deck()
+                player_type, player_agent, player_label = "human", None, "あなた"
+            # 相手: ランダム or フォーム選択
+            if is_random_opp:
+                opponent_type, opponent_agent, opponent_deck, opponent_label = _random_opponent(gid, g["rng"], player_deck)
+            else:
+                opponent_type, opponent_agent, opponent_deck, opponent_label = _selected_opponent(gid, player_deck)
     except SelectionError as exc:
         _destroy_game(gid)
         return _selection_error(str(exc))
