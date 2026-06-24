@@ -23,7 +23,7 @@
     </div>
     <div class="builderTools">
       <input id="deckNameInput" type="text" placeholder="デッキ名（例: わたしの炎デッキ）">
-      <input id="cardSearch" type="search" placeholder="カード名・IDで検索">
+      <input id="cardSearch" type="search" placeholder="カード名・ID・効果テキストで検索（例: エネルギーの数×50）">
       <select id="cardTypeFilter"><option value="">すべて</option><option value="POKEMON">ポケモン</option><option value="ITEM">グッズ</option><option value="SUPPORTER">サポート</option><option value="STADIUM">スタジアム</option><option value="TOOL">ポケモンのどうぐ</option><option value="BASIC_ENERGY">基本エネルギー</option><option value="SPECIAL_ENERGY">特殊エネルギー</option></select>
       <select id="energyFilter"><option value="">全タイプ</option><option value="GRASS">草</option><option value="FIRE">炎</option><option value="WATER">水</option><option value="LIGHTNING">雷</option><option value="PSYCHIC">超</option><option value="FIGHTING">闘</option><option value="DARKNESS">悪</option><option value="METAL">鋼</option><option value="COLORLESS">無色</option></select>
       <select id="flagFilter"><option value="">レアリティ問わず</option><option value="ex">ポケモンex</option><option value="MEGA">メガex</option><option value="tera">テラスタル</option><option value="ACE">ACE SPEC</option></select>
@@ -76,7 +76,7 @@ function renderCardLibrary(){
   const fl=document.getElementById('flagFilter').value;
   const sort=document.getElementById('sortBy').value;
   const counts=deckCounts();
-  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et)&&(!fl||(c.flags||[]).includes(fl)));
+  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q)||(c.effectText||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et)&&(!fl||(c.flags||[]).includes(fl)));
   if(sort==='hp')        cards=cards.slice().sort((a,b)=>(b.hp||0)-(a.hp||0)||a.id-b.id);
   else if(sort==='dmg')  cards=cards.slice().sort((a,b)=>(b.maxDamage||0)-(a.maxDamage||0)||a.id-b.id);
   else if(sort==='type') cards=cards.slice().sort((a,b)=>String(a.type||'').localeCompare(String(b.type||''))||a.id-b.id);
