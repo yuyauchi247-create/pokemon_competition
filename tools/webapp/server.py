@@ -1373,13 +1373,31 @@ def _max_attack_damage(detail):
     return best
 
 
+_ALL_CARDS_CACHE = None
+
+
 @app.route("/api/cards", methods=["GET"])
 def api_cards():
-    """デッキ作成画面用: PDF 39ページまでの使用可能カード(ID 1..1267)。"""
+    """デッキ作成画面用: PDF 39ページまでの使用可能カード(ID 1..1267)。
+
+    カードデータは静的（起動中に変わらない）ので初回構築結果をプロセス内にキャッシュする。
+    毎回 1267枚ぶん card_detail を生成すると ~60秒かかり画面が事実上使えないため必須。"""
+    global _ALL_CARDS_CACHE
+    if _ALL_CARDS_CACHE is not None:
+        return jsonify({"cards": _ALL_CARDS_CACHE})
     cards = []
     for cid in range(1, 1268):
         meta = card_meta(cid)
         detail = card_detail(cid)
+        # 効果テキスト検索用: 全ワザ/特性の名前・効果＋トレーナーズ説明をまとめる。
+        parts = []
+        for m in (detail.get("moves") or []):
+            if m.get("name"):
+                parts.append(m["name"])
+            if m.get("effect"):
+                parts.append(m["effect"])
+        if detail.get("text"):
+            parts.append(detail["text"])
         cards.append({
             **meta,
             "stage": detail.get("stage", ""),
@@ -1388,7 +1406,9 @@ def api_cards():
             "rule": detail.get("rule", ""),
             "evolvesFrom": detail.get("evolvesFrom", ""),
             "maxDamage": _max_attack_damage(detail),  # 攻撃力ソート用
+            "effectText": " ".join(parts),            # 効果テキスト検索用
         })
+    _ALL_CARDS_CACHE = cards
     return jsonify({"cards": cards})
 
 
