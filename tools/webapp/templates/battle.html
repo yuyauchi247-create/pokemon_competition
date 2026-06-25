@@ -223,6 +223,7 @@ let aiPlaying=false, aiDelay=700, aiTimer=null, speedMult=1;
 const GID=new URLSearchParams(location.search).get('gid')||'';
 const TOKEN=localStorage.getItem('pvp_token_'+GID)||'';
 const ROYALE=parseInt(new URLSearchParams(location.search).get('royale')||'',10); // バトルロワイヤルの第N戦（NaN=通常対戦）
+const ROYALE_TOTAL=parseInt(new URLSearchParams(location.search).get('rt')||'5',10); // ロワイヤル総ステップ数
 function qs(){return '?gid='+encodeURIComponent(GID)+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');}
 let lastVer=-1, pvpTimer=null;
 const ENE_ICON={GRASS:'🍃',FIRE:'🔥',WATER:'💧',LIGHTNING:'⚡',PSYCHIC:'🔮',FIGHTING:'👊',DARKNESS:'🌙',METAL:'⚙️',DRAGON:'🐉',COLORLESS:'⭐',RAINBOW:'🌈',TEAM_ROCKET:'🚀'};
@@ -538,12 +539,34 @@ function renderBanner(){
   if(!isNaN(ROYALE)){
     const won=(STATE.result===0);
     const lost=(STATE.result===1);
-    // 5連勝制: 勝てば次へ、負けたら最初の相手からやり直し（進行リセット）。引き分けは同じ相手に再挑戦。
-    const bmsg=won?'🏆 突破！ クリアしました！':(lost?'敗北… 最初の相手からやり直しです':'引き分け');
-    const back=won?('/royale?cleared='+ROYALE):(lost?('/royale?lost='+ROYALE):'/royale');
-    const bask=won?'次の相手が待っています。':(lost?'1勝でも落とすと振り出しに戻ります。最初の相手から挑戦し直してください。':'同じ相手に再挑戦できます。');
-    const btnLabel=won?'👑 バトルロワイヤルへ戻る（次の相手へ）':(lost?'👑 バトルロワイヤルへ戻る（最初から）':'👑 バトルロワイヤルへ戻る（再挑戦）');
+    const isFinal=(ROYALE>=ROYALE_TOTAL);   // この勝利で5連勝＝全クリア
     b.className=won?'win':'lose';
+    if(won && !isFinal){
+      // 勝利→選択画面に戻らず、同じ挑戦者設定のまま次の相手と直接対戦する。
+      b.innerHTML=`<div class="bmsg">🏆 第${ROYALE}戦 突破！</div>
+        <div class="bask">同じデッキのまま、次の相手（第${ROYALE+1}戦）に挑戦します。</div>
+        <div class="bactions">
+          <button type="button" onclick="royaleNext(this)">▶ 第${ROYALE+1}戦へ進む</button>
+          <button type="button" class="gray" onclick="location.href='/replay'">🎬 リプレイを見る</button>
+          <button type="button" class="gray" onclick="rememberRoyale();location.href='/royale'">👑 ロワイヤル一覧へ</button>
+        </div>`;
+      return;
+    }
+    if(won && isFinal){
+      try{ localStorage.setItem('royale_progress', String(ROYALE)); }catch(e){}
+      b.innerHTML=`<div class="bmsg">👑 ${ROYALE}連勝 達成！ 全クリアです！</div>
+        <div class="bask">殿堂入りに登録できます。</div>
+        <div class="bactions">
+          <button type="button" onclick="location.href='/royale?cleared='+${ROYALE}">👑 殿堂入りへ進む</button>
+          <button type="button" class="gray" onclick="location.href='/replay'">🎬 リプレイを見る</button>
+        </div>`;
+      return;
+    }
+    // 敗北 / 引き分け
+    const bmsg=lost?'敗北… 最初の相手からやり直しです':'引き分け';
+    const back=lost?('/royale?lost='+ROYALE):'/royale';
+    const bask=lost?'1勝でも落とすと振り出しに戻ります。最初の相手から挑戦し直してください。':'同じ相手に再挑戦できます。';
+    const btnLabel=lost?'👑 バトルロワイヤルへ戻る（最初から）':'👑 バトルロワイヤルへ戻る（再挑戦）';
     b.innerHTML=`<div class="bmsg">${bmsg}</div>
       <div class="bask">${bask}</div>
       <div class="bactions">
@@ -552,14 +575,37 @@ function renderBanner(){
       </div>`;
     return;
   }
-  const againHref = mode==='pvp' ? '/play' : ('/setup?mode='+mode);
+  const isPvp = mode==='pvp';
+  const reselectHref = isPvp ? '/play' : ('/setup?mode='+mode);
+  // 人vsAI / AI観戦は「同じ相手・デッキで即再戦」。人vs人は相手を待てないので選び直しへ。
+  const primary = isPvp
+    ? `<button type="button" onclick="location.href='/play'">🔄 もう一度対戦する</button>`
+    : `<button type="button" onclick="rematch(this)">🔄 もう一度対戦する（同じ相手）</button>`;
   b.innerHTML=`<div class="bmsg">${msg}</div>
     <div class="bask">もう一度対戦しますか？</div>
     <div class="bactions">
-      <button type="button" onclick="location.href='${againHref}'">🔄 もう一度対戦する</button>
-      ${mode!=='pvp'?`<button type="button" class="gray" onclick="location.href='/replay'">🎬 リプレイを見る</button>`:''}
+      ${primary}
+      ${!isPvp?`<button type="button" class="gray" onclick="location.href='${reselectHref}'">🔧 相手・デッキを選び直す</button>`:''}
+      ${!isPvp?`<button type="button" class="gray" onclick="location.href='/replay'">🎬 リプレイを見る</button>`:''}
       <button type="button" class="gray" onclick="location.href='/'">🏠 ホームへ</button>
     </div>`;
+}
+async function rematch(btn){
+  if(btn){btn.disabled=true;btn.textContent='開始中…';}
+  let r=null; try{ r=await post('/api/rematch',{gid:GID}); }catch(e){}
+  if(r&&r.gid){ location.href='/battle?gid='+encodeURIComponent(r.gid); return; }
+  // 再戦情報が見つからない（サーバ再起動等）→ 相手選択へフォールバック
+  alert((r&&r.error)||'同条件での再戦を開始できませんでした。相手を選び直してください。');
+  location.href = '/setup?mode='+(STATE.mode||'human');
+}
+function rememberRoyale(){ try{ localStorage.setItem('royale_progress', String(ROYALE)); }catch(e){} }
+async function royaleNext(btn){
+  if(btn){btn.disabled=true;btn.textContent='次戦を準備中…';}
+  rememberRoyale();   // この勝利分を進行に反映（一覧に戻っても続きから）
+  let r=null; try{ r=await post('/api/royale/next',{gid:GID, stage:ROYALE}); }catch(e){}
+  if(r&&r.gid){ location.href='/battle?gid='+encodeURIComponent(r.gid)+'&royale='+(ROYALE+1)+'&rt='+ROYALE_TOTAL; return; }
+  // 次の相手がいない（全クリア）/ 取得失敗 → ロワイヤル画面へ
+  location.href='/royale?cleared='+ROYALE;
 }
 
 /* ---------- クリック→詳細＋操作モーダル ---------- */

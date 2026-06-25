@@ -40,6 +40,7 @@ from selection import (  # noqa: E402
     update_user_agent_deck, update_user_deck, delete_user_deck,
     validate_ai_picks, validate_deck_for_builder, deck_has_basic,
     deck_is_private, check_deck_password,
+    list_user_combos, save_user_combo, read_user_combo, delete_user_combo,
 )
 from sim_env import (  # noqa: E402
     to_observation_class, battle_start, battle_select, battle_finish,
@@ -408,7 +409,14 @@ def _random_opponent(gid, rng, default_deck):
 
 
 def _selected_player_agent_side(gid):
-    """AI vs AI モードのプレイヤー0側エージェントを決める。"""
+    """AI vs AI モードのプレイヤー0側エージェントを決める。
+
+    player_select=combo: デッキとエージェントを別々に選び、エージェントのコードを
+    選んだデッキ(forced_deck)で動かす（新方式）。
+    それ以外: 従来の player_type（rule / registered＝AI同梱デッキ）。
+    """
+    if request.form.get("player_select") == "combo":
+        return _player_combo_side(gid)
     ptype = request.form.get("player_type", "rule")
     if ptype == "rule":
         deck, deck_name = _selected_player_deck()
@@ -417,6 +425,23 @@ def _selected_player_agent_side(gid):
     agent, deck, label = _load_agent_side(
         gid, "player", ptype, "player_agent_file", "player_agent_id", default_deck)
     return "custom", agent, deck, label
+
+
+def _player_combo_side(gid):
+    """自分側=「デッキ」＋「エージェント」の組合せ。エージェントを選んだデッキで動かす。"""
+    aid = (request.form.get("player_agent_id") or "").strip()
+    if not aid:
+        raise SelectionError("対戦に使うエージェントを選んでください。")
+    deck, deck_label = _selected_deck(
+        "player_deck_mode", "player_deck_id", "player_user_deck_id", "player_deck_file",
+        agent_id_field="player_deck_agent_id", pw_field="player_deck_password")
+    _require_basic_deck(deck)
+    code = read_user_agent_code(aid)
+    name = next((a["name"] for a in list_user_agents() if a["id"] == aid), aid)
+    agent, used_deck, _src = _materialize_agent(
+        gid, "player", code, f"AI（{name}）", deck,
+        forced_deck=deck, extra_src=user_agent_dir(aid))
+    return "custom", agent, used_deck, f"{name} × {deck_label}"
 
 
 def _resolve_registered_agent_deck(aid):
@@ -1550,6 +1575,69 @@ def api_royale_ranking():
     return jsonify({"ladder": _royale_ladder()})
 
 
+@app.route("/api/royale/next", methods=["POST"])
+def api_royale_next():
+    """バトルロワイヤル: 直前の対戦の挑戦者設定のまま、次のラダー相手と即対戦を始める。
+
+    ロワイヤルの選択画面に戻らず、勝利画面から直接次戦へ進むためのもの。挑戦者側は
+    元ゲームに保存した rematch スペック（人/登録AI・デッキ）を再利用し、相手だけを
+    次の順位のAIに差し替える。stage = 次に戦う相手のラダー上 index（0始まり, 弱→強）。
+    """
+    data = request.get_json(silent=True) or {}
+    src = GAMES.get(data.get("gid") or _request_gid())
+    if src is None or not src.get("rematch"):
+        return jsonify({"error": "対戦情報が見つかりません（期限切れの可能性）。"
+                                 "ロワイヤル画面から続けてください。"}), 404
+    try:
+        stage = int(data.get("stage"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "stage が不正です。"}), 400
+    ladder = list(reversed(_royale_ladder()))  # 弱→強（第1戦=index0）
+    if stage < 0 or stage >= len(ladder):
+        return jsonify({"error": "次の相手がいません（全クリア済み）。", "cleared": True}), 400
+    opp_id = ladder[stage]["id"]
+    spec = src["rematch"]
+    gid = uuid.uuid4().hex
+    g = _new_game_state(gid)
+    g["rng"] = random.Random(None)
+    player_deck = list(spec["player_deck"])
+    try:
+        code = read_user_agent_code(opp_id)
+        name = next((a["name"] for a in list_user_agents() if a["id"] == opp_id), opp_id)
+        forced = read_user_agent_deck(opp_id)
+        opp_agent, opp_deck, opp_label = _materialize_agent(
+            gid, "opponent", code, f"登録AI（{name}）", player_deck,
+            forced_deck=forced, extra_src=user_agent_dir(opp_id))
+    except SelectionError as exc:
+        _destroy_game(gid)
+        return _selection_error(str(exc))
+    obs, start = battle_start(player_deck, opp_deck)
+    if obs is None:
+        _destroy_game(gid)
+        return jsonify({"error": f"battle start failed (errorType={start.errorType})"}), 500
+    g["ptr"] = start.battlePtr
+    g["obs"], g["result"], g["running"], g["events"] = obs, -1, True, []
+    g["mode"] = spec["mode"]
+    g["controlled"] = {HUMAN}
+    g["player_type"], g["player_agent"], g["player_label"] = (
+        spec["player_type"], spec["player_agent"], spec["player_label"])
+    g["opponent_type"], g["opponent_agent"] = "custom", opp_agent
+    g["opponent_label"], g["deck_label"] = opp_label, spec["deck_label"]
+    g["recorder"] = ReplayRecorder([spec["player_label"], opp_label], episode_id=gid)
+    g["rematch"] = {**spec, "opponent_type": "custom", "opponent_agent": opp_agent,
+                    "opponent_deck": list(opp_deck), "opponent_label": opp_label}
+    GAMES[gid] = g
+    _evict_if_needed()
+    _activate(g)
+    try:
+        _advance_until_human(g)
+    except SelectionError as exc:
+        return _selection_error(str(exc))
+    out = _state_json(g)
+    out["royaleStage"] = stage + 1
+    return jsonify(out)
+
+
 @app.route("/api/royale/refresh", methods=["POST"])
 def api_royale_refresh():
     """登録AIの総当たりをバックグラウンドで実行し、ロワイヤルのラダー元データ
@@ -1730,8 +1818,129 @@ def api_new():
     g["opponent_type"], g["opponent_agent"] = opponent_type, opponent_agent
     g["opponent_label"], g["deck_label"] = opponent_label, deck_label
     g["recorder"] = ReplayRecorder([player_label, opponent_label], episode_id=gid)
+    # 「もう一度対戦する」用に、解決済みの対戦内容を保存（ランダム対戦でも同条件で再戦できる）。
+    # エージェントは状態を持たない callable なのでオブジェクトをそのまま再利用する。
+    g["rematch"] = {
+        "mode": match_mode,
+        "player_type": player_type, "player_agent": player_agent,
+        "player_deck": list(player_deck), "player_label": player_label,
+        "opponent_type": opponent_type, "opponent_agent": opponent_agent,
+        "opponent_deck": list(opponent_deck), "opponent_label": opponent_label,
+        "deck_label": deck_label,
+    }
     GAMES[gid] = g
+    # 過去対戦パネル用に、再現できる選択(ランダム対戦は除く)を履歴へ記録。
+    if not is_random and not is_random_opp:
+        _record_battle_history(request.form, match_mode, player_label, opponent_label)
     _evict_if_needed()  # 他対戦を破棄する際 ptr が切り替わるので、この後で再アクティブ化する
+    _activate(g)
+    try:
+        _advance_until_human(g)
+    except SelectionError as exc:
+        return _selection_error(str(exc))
+    return jsonify(_state_json(g))
+
+
+# ---- 組合せ(combo)＝デッキ+エージェント の保存API ----
+@app.route("/api/combos", methods=["GET"])
+def api_combos_list():
+    return jsonify({"combos": list_user_combos()})
+
+
+@app.route("/api/combos", methods=["POST"])
+def api_combos_save():
+    data = request.get_json(silent=True) or request.form
+    try:
+        combo = save_user_combo(
+            (data.get("name") or "").strip(),
+            (data.get("deck_id") or "").strip(),
+            (data.get("agent_id") or "").strip(),
+            (data.get("deck_label") or "").strip(),
+            (data.get("agent_label") or "").strip(),
+            (data.get("deck_mode") or "user").strip())
+    except SelectionError as exc:
+        return _selection_error(str(exc))
+    return jsonify({"ok": True, "combo": combo})
+
+
+@app.route("/api/combos/<combo_id>", methods=["DELETE"])
+def api_combos_delete(combo_id):
+    delete_user_combo(combo_id)
+    return jsonify({"ok": True})
+
+
+# ---- 対戦履歴（過去と同条件でワンクリック再戦するための再現用フォーム保存）----
+BATTLE_HISTORY_FILE = LOGS_DIR / "battle_history.json"
+BATTLE_HISTORY_MAX = 60
+
+
+def _record_battle_history(form, mode, player_label, opponent_label):
+    """対戦開始時に、再現用フォーム＋表示ラベルを履歴に追記（直近のみ保持）。
+    アップロード系(file)や seed は再現に使わないので除外する。"""
+    try:
+        keep = {k: v for k, v in dict(form).items()
+                if k != "seed" and "file" not in k}
+        entry = {"ts": int(time.time() * 1000), "mode": mode,
+                 "playerLabel": player_label, "opponentLabel": opponent_label,
+                 "label": f"{player_label} vs {opponent_label}", "form": keep}
+        hist = _read_json(BATTLE_HISTORY_FILE) if BATTLE_HISTORY_FILE.exists() else {}
+        items = hist.get("items", []) if isinstance(hist, dict) else []
+        items.insert(0, entry)
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        BATTLE_HISTORY_FILE.write_text(
+            json.dumps({"items": items[:BATTLE_HISTORY_MAX]}, ensure_ascii=False, indent=2),
+            encoding="utf-8")
+    except Exception:
+        pass
+
+
+@app.route("/api/battle_history", methods=["GET"])
+def api_battle_history():
+    """過去の対戦を、同条件(form)で重複排除して直近順に返す（右パネル用）。"""
+    hist = _read_json(BATTLE_HISTORY_FILE) if BATTLE_HISTORY_FILE.exists() else {}
+    items = hist.get("items", []) if isinstance(hist, dict) else []
+    seen, uniq = set(), []
+    for it in items:
+        key = json.dumps(it.get("form", {}), sort_keys=True, ensure_ascii=False)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(it)
+    return jsonify({"items": uniq[:20]})
+
+
+@app.route("/api/rematch", methods=["POST"])
+def api_rematch():
+    """「もう一度対戦する」: 直前の対戦と同じ相手・デッキ・条件で新しい対戦を始める。
+
+    元ゲームに保存した rematch スペック（解決済みのデッキ/エージェント/ラベル）を
+    そのまま再利用するので、ランダム対戦でも相手は再抽選されず同条件になる。
+    """
+    src = GAMES.get(_request_gid())
+    if src is None or not src.get("rematch"):
+        return jsonify({"error": "再戦情報が見つかりません（対戦が期限切れの可能性）。"
+                                 "お手数ですが相手を選び直してください。"}), 404
+    spec = src["rematch"]
+    gid = uuid.uuid4().hex
+    g = _new_game_state(gid)
+    g["rng"] = random.Random(request.form.get("seed") or None)
+    player_deck, opponent_deck = list(spec["player_deck"]), list(spec["opponent_deck"])
+    obs, start = battle_start(player_deck, opponent_deck)
+    if obs is None:
+        _destroy_game(gid)
+        return jsonify({"error": f"battle start failed (errorType={start.errorType})"}), 500
+    g["ptr"] = start.battlePtr
+    g["obs"], g["result"], g["running"], g["events"] = obs, -1, True, []
+    g["mode"] = spec["mode"]
+    g["controlled"] = {HUMAN}
+    g["player_type"], g["player_agent"], g["player_label"] = (
+        spec["player_type"], spec["player_agent"], spec["player_label"])
+    g["opponent_type"], g["opponent_agent"] = spec["opponent_type"], spec["opponent_agent"]
+    g["opponent_label"], g["deck_label"] = spec["opponent_label"], spec["deck_label"]
+    g["recorder"] = ReplayRecorder([spec["player_label"], spec["opponent_label"]], episode_id=gid)
+    g["rematch"] = spec  # 連続で再戦できるよう引き継ぐ
+    GAMES[gid] = g
+    _evict_if_needed()
     _activate(g)
     try:
         _advance_until_human(g)
