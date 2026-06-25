@@ -21,6 +21,7 @@ SAMPLE_SUBMISSION = ROOT / "data" / "sample_submission"
 SAMPLE_DECKS_DIR = ROOT / "data" / "sample_decks"
 USER_DECKS_DIR = ROOT / "data" / "user_decks"
 USER_AGENTS_DIR = ROOT / "data" / "user_agents"
+USER_COMBOS_DIR = ROOT / "data" / "user_combos"
 CARD_DATA_CSV = ROOT / "data" / "JP_Card_Data.csv"
 DEFAULT_SAMPLE_DECK = SAMPLE_SUBMISSION / "deck.csv"
 VALID_CARD_MIN = 1
@@ -559,6 +560,64 @@ def read_user_agent_code(agent_id: str, agents_dir: Path | None = None) -> str:
 def delete_user_agent(agent_id: str, agents_dir: Path | None = None) -> None:
     import shutil
     shutil.rmtree(user_agent_dir(agent_id, agents_dir), ignore_errors=True)
+
+
+# ---- 組合せ(combo): デッキ+エージェントの保存（AI対戦の自分側用） ----
+# cg 非依存なので、ここで単体テストできる。各組合せは1ファイル(JSON)。
+
+def _safe_combo_path(combo_id: str, combos_dir: Path | None = None) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", combo_id or ""):
+        raise SelectionError(f"不明な組合せです: {combo_id}")
+    base = combos_dir or USER_COMBOS_DIR
+    return base / f"{combo_id}.json"
+
+
+def save_user_combo(name: str, deck_id: str, agent_id: str,
+                    deck_label: str = "", agent_label: str = "",
+                    deck_mode: str = "user", combos_dir: Path | None = None) -> dict:
+    """デッキ+エージェントの組合せを保存する。deck_id/agent_id は必須。
+    deck_mode は sample/user/agent（デッキの出所）。"""
+    name = (name or "保存した組合せ").strip()[:80]
+    if not deck_id or not agent_id:
+        raise SelectionError("デッキとエージェントの両方を選んでください。")
+    if deck_mode not in ("sample", "user", "agent"):
+        deck_mode = "user"
+    base = combos_dir or USER_COMBOS_DIR
+    base.mkdir(parents=True, exist_ok=True)
+    combo_id = f"combo_{int(time.time() * 1000)}"
+    payload = {
+        "id": combo_id, "name": name,
+        "deck_id": deck_id, "agent_id": agent_id, "deck_mode": deck_mode,
+        "deck_label": deck_label or deck_id, "agent_label": agent_label or agent_id,
+        "created_at": int(time.time() * 1000),
+    }
+    (base / f"{combo_id}.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return payload
+
+
+def list_user_combos(combos_dir: Path | None = None) -> list[dict]:
+    base = combos_dir or USER_COMBOS_DIR
+    if not base.exists():
+        return []
+    out: list[dict] = []
+    for p in sorted(base.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            out.append(json.loads(p.read_text(encoding="utf-8")))
+        except json.JSONDecodeError:
+            pass
+    return out
+
+
+def read_user_combo(combo_id: str, combos_dir: Path | None = None) -> dict:
+    path = _safe_combo_path(combo_id, combos_dir)
+    if not path.exists():
+        raise SelectionError(f"組合せが見つかりません: {combo_id}")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def delete_user_combo(combo_id: str, combos_dir: Path | None = None) -> None:
+    _safe_combo_path(combo_id, combos_dir).unlink(missing_ok=True)
 
 
 def _expand_deck_counts(counts) -> list[int]:
