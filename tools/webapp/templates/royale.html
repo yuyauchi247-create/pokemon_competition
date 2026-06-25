@@ -88,15 +88,23 @@
     </div>
   </section>
 
-  <!-- 挑戦者（AIエージェント専用） -->
+  <!-- 挑戦者（AIエージェント専用・デッキ＋エージェントを選択） -->
   <section id="deckSection">
-    <h3>🎯 挑戦するAIエージェント</h3>
-    <!-- 自分で挑戦(人)は廃止。AIエージェントが上位5体に連戦するのを観戦する。 -->
+    <h3>🎯 挑戦者（デッキ ＋ エージェント）</h3>
+    <!-- 自分で挑戦(人)は廃止。選んだエージェントが選んだデッキで上位5体に連戦するのを観戦する。 -->
     <div id="agentChallengerBox">
       <div class="deckRow">
-        <select id="challengerAgent"></select>
+        <label style="font-weight:700;color:#34445a">保存した組合せ:
+          <select id="comboPick"><option value="">― 選ぶ ―</option></select></label>
       </div>
-      <p class="lead" style="margin:4px 0 0;font-size:13px">選んだAIエージェントが自分のデッキで上位5体に自動で挑戦します（AI vs AIを観戦）。</p>
+      <div class="deckRow" style="gap:14px;flex-wrap:wrap">
+        <label style="font-weight:700;color:#34445a">🃏 デッキ:
+          <select id="rlDeck"></select></label>
+        <label style="font-weight:700;color:#34445a">🤖 エージェント:
+          <select id="challengerAgent"></select></label>
+        <button type="button" class="gray" id="comboSaveBtn">＋ この組合せを保存</button>
+      </div>
+      <p class="lead" style="margin:4px 0 0;font-size:13px">選んだエージェントが、選んだデッキで上位5体に自動で挑戦します（AI vs AIを観戦）。</p>
     </div>
   </section>
 
@@ -225,8 +233,32 @@ function populateChallengerAgents(){
     :'<option value="">（登録AIがありません。「AIエージェント登録」から追加）</option>';
   if(prev){const o=[...sel.options].find(x=>x.value===prev);if(o)sel.value=prev;}
 }
+// 挑戦に使うデッキ（保存済みデッキ＋登録AIのデッキ）。value="user:ID" / "agent:ID"
+function populateRlDeck(){
+  const sel=document.getElementById('rlDeck'); if(!sel)return;
+  const prev=sel.value, opts=[];
+  (USER||[]).forEach(d=>{ if(d.hasBasic!==false) opts.push(`<option value="user:${d.id}">${escapeHtml(d.name)}</option>`); });
+  (AGENTS||[]).filter(a=>a.cards&&a.cards.length).forEach(a=>opts.push(`<option value="agent:${a.id}">${escapeHtml(a.name)}（AIのデッキ）</option>`));
+  sel.innerHTML=opts.length?opts.join(''):'<option value="">（デッキがありません）</option>';
+  if(prev){const o=[...sel.options].find(x=>x.value===prev);if(o)sel.value=prev;}
+}
+function loadRlCombos(){
+  const sel=document.getElementById('comboPick'); if(!sel)return;
+  get('/api/combos').then(d=>{
+    const cs=d.combos||[];
+    sel.innerHTML='<option value="">― 選ぶ ―</option>'+cs.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}（${escapeHtml(c.agent_label)} × ${escapeHtml(c.deck_label)}）</option>`).join('');
+    sel._combos=cs;
+  }).catch(()=>{});
+}
+function applyRlCombo(c){
+  const ds=document.getElementById('rlDeck');
+  const dv=(c.deck_mode||'user')+':'+c.deck_id;
+  const o=[...ds.options].find(x=>x.value===dv); if(o)ds.value=dv;
+  const as=document.getElementById('challengerAgent');
+  const ao=[...as.options].find(x=>x.value===c.agent_id); if(ao)as.value=c.agent_id;
+}
 function syncChallengerUI(){
-  populateChallengerAgents();   // AI専用: 常にエージェント選択を表示
+  populateChallengerAgents(); populateRlDeck();
 }
 
 /* ---- 挑戦開始 ---- */
@@ -238,21 +270,19 @@ async function startBattle(){
   fd.append('seed',String(Math.floor(Math.random()*1e9)));
   fd.append('opponent_type','registered');
   fd.append('opponent_agent_id',opp.id);
-  const mode=challengerMode();
-  if(mode==='agent'){
-    const aid=document.getElementById('challengerAgent').value;
-    if(!aid){setMsg('挑戦する登録AIを選択してください。');return;}
-    fd.append('match_mode','ai');          // AI vs AI（挑戦者AI=player0）を観戦
-    fd.append('player_type','registered');
-    fd.append('player_agent_id',aid);
-  }else{
-    const deck=chosenDeck();
-    if(!deck){setMsg('あなたのデッキを選択してください。');return;}
-    fd.append('match_mode','human');
-    fd.append('deck_mode',deck.mode);
-    if(deck.mode==='user') fd.append('user_deck_id',deck.id);
-    else fd.append('deck_agent_id',deck.id);
-  }
+  // 挑戦者＝デッキ＋エージェントの組合せ（選んだエージェントを選んだデッキで動かす）
+  const aid=document.getElementById('challengerAgent').value;
+  const dv=document.getElementById('rlDeck').value;
+  if(!aid){setMsg('挑戦するエージェントを選んでください。');return;}
+  if(!dv){setMsg('使うデッキを選んでください。');return;}
+  const sp=dv.indexOf(':'); const dmode=dv.slice(0,sp), did=dv.slice(sp+1);
+  fd.append('match_mode','ai');             // AI vs AI（挑戦者AI=player0）を観戦
+  fd.append('player_select','combo');
+  fd.append('player_agent_id',aid);
+  fd.append('player_deck_mode',dmode);
+  if(dmode==='user') fd.append('player_user_deck_id',did);
+  else if(dmode==='agent') fd.append('player_deck_agent_id',did);
+  else fd.append('player_deck_id',did);
   const btn=document.getElementById('startBtn');btn.disabled=true;setMsg('対戦を準備中…');
   try{
     const r=await fetch('/api/new',{method:'POST',body:fd});
@@ -355,14 +385,30 @@ function handleClearedParam(){
     if(progress>STEPS.length) setProgress(STEPS.length);
     handleClearedParam();
     initDeckPicker();
+    populateRlDeck();          // 保存済みデッキで先に埋める
     renderLadder();
   }catch(e){setMsg('データの読み込みに失敗しました。');}
+  loadRlCombos();
+  // 組合せ選択／保存の操作
+  const cp=document.getElementById('comboPick');
+  if(cp) cp.onchange=e=>{const c=(e.currentTarget._combos||[]).find(x=>x.id===e.currentTarget.value); if(c)applyRlCombo(c);};
+  const csb=document.getElementById('comboSaveBtn');
+  if(csb) csb.onclick=async()=>{
+    const aid=document.getElementById('challengerAgent').value, dv=document.getElementById('rlDeck').value;
+    if(!aid||!dv){setMsg('デッキとエージェントを選んでください。');return;}
+    const sp=dv.indexOf(':'), dmode=dv.slice(0,sp), did=dv.slice(sp+1);
+    const name=prompt('組合せの名前：',''); if(name===null)return;
+    const aName=(AGENTS.find(a=>a.id===aid)||{}).name||aid;
+    const dName=([...(USER||[]),...(AGENTS||[])].find(d=>String(d.id)===String(did))||{}).name||did;
+    const r=await post('/api/combos',{name,deck_id:did,agent_id:aid,deck_mode:dmode,deck_label:dName,agent_label:aName});
+    if(r&&r.error){setMsg(r.error);return;}
+    setMsg('組合せを保存しました。'); loadRlCombos();
+  };
   // 「登録AIのデッキ」用の一覧は別途取得し、必要なら選択肢を更新する。
   get('/api/config').then(c=>{
     AGENTS=c.agents||[];
-    const ts=document.getElementById('deckType');
-    if(ts&&ts.value==='agent') ts.dispatchEvent(new Event('change'));
-    if(challengerMode()==='agent') populateChallengerAgents();
+    populateChallengerAgents();
+    populateRlDeck();          // 登録AIのデッキも選べるよう更新
   }).catch(()=>{});
 })();
 </script>
