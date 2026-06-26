@@ -939,6 +939,60 @@ async function animateDraws(prev,newB){
   await sleep(120);
 }
 
+/* ===== 開幕マリガン演出（手札→山札に戻して引き直す） ===== */
+function _mulliganCount(events,who){
+  return (events||[]).filter(e=>e&&e.who===who&&/マリガン|引き直し/.test(e.text||'')).length;
+}
+// 手札→山札へ裏面カードを飛ばす（animateDraw の逆向き）
+async function animateReturnToDeck(who,n){
+  const to=_deckRect(who), from=_handRect(who);
+  if(!from||!to||n<=0)return;
+  const W=44,H=Math.round(W*1.4);
+  const tx=to.left+to.width/2-W/2, ty=to.top+to.height/2-H/2;
+  for(let i=0;i<n;i++){
+    const sx=from.left+Math.min(Math.max(0,from.width-W-8),10+i*20), sy=from.top+from.height/2-H/2;
+    const card=document.createElement('img');
+    card.src='/card_back';card.alt='';card.className='flyCard';
+    card.style.width=W+'px';card.style.left=sx+'px';card.style.top=sy+'px';card.style.opacity='1';
+    document.body.appendChild(card);
+    requestAnimationFrame(()=>{card.style.opacity='.15';card.style.transform=`translate(${tx-sx}px,${ty-sy}px)`;});
+    setTimeout(()=>card.remove(),520);
+    await sleep(70);
+  }
+  await sleep(150);
+}
+// 開幕: マリガンしたサイドは「初手を配る→(山札へ戻す→引き直す)×回数」を見せる。
+// マリガン情報は events の「…引き直し（マリガン）」テキストから検出する。
+async function animateOpening(ns){
+  if(!ns||!ns.board||ns.status==='waiting'||ns.result!==-1)return;
+  const evs=ns.events||[];
+  const m={you:_mulliganCount(evs,'you'),opp:_mulliganCount(evs,'opp')};
+  if(!m.you&&!m.opp)return;                 // マリガン無し→従来どおり（演出なし）
+  STATE=ns;renderBoard();renderBanner();    // 盤面を描画（手札は一旦隠す）
+  const hz={you:document.getElementById('youHand'),opp:document.getElementById('oppHand')};
+  Object.values(hz).forEach(h=>{if(h)h.style.visibility='hidden';});
+  busy=true;
+  const n=who=>Math.min(_handCount(ns.board[who])||7,7)||7;
+  const reveal=who=>{if(hz[who])hz[who].style.visibility='';};
+  async function side(who){
+    if(!m[who]){reveal(who);return;}        // マリガン無し側は即表示
+    const cyc=Math.min(m[who],2);           // 演出は最大2回（実回数はログ参照）
+    await animateDraw(who,n(who));          // 最初の手札を配る
+    for(let k=0;k<cyc;k++){
+      await sleep(220);
+      if(who==='you')showToast(m.you>1?`マリガン×${m.you}：たねポケモンが無いので引き直し`
+                                        :'マリガン：たねポケモンが無いので引き直し');
+      await animateReturnToDeck(who,n(who)); // 手札→山札へ戻す
+      await sleep(160);
+      await animateDraw(who,n(who));          // 引き直し
+    }
+    reveal(who);
+  }
+  await Promise.all([side('you'),side('opp')]);   // 両サイド並行（実戦の配り直しと同じく同時）
+  busy=false;
+  STATE=null;   // apply() を「初期描画前」と同じ前提で動かすため戻す
+}
+
 /* ===== 場に出す演出（バトル場→ベンチの順） ===== */
 function _activeOf(s){const a=s&&s.active;return (a&&a.id)?a:null;}  // active はカードdict or null
 function _benchCount(s){return (s&&s.bench)?s.bench.filter(Boolean).length:0;}
@@ -1153,6 +1207,7 @@ function showNoGame(){
   if(!st||!st.board){showNoGame();return;}
   document.getElementById('logbody').innerHTML='';
   pushLog({who:'sys',text:'―― 対戦開始 ――'});
+  await animateOpening(st);   // マリガンがあれば「手札→山札→引き直し」を演出
   await apply(st,true);
   if(st.mode==='ai'&&st.result===-1){aiPlaying=true;renderAiControls();aiLoop();}
 })();
