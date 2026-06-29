@@ -94,28 +94,34 @@
       <small style="color:var(--sub)">選んだエージェントが、選んだデッキで対戦します（組合せは自由に保存できます）。</small>
     </div>
     <div class="choice">
-      <h3>プレイヤー2（AI）</h3>
-      <div class="agentPick" data-prefix="opponent">
-        <label><input type="radio" name="opponent_type" value="rule" checked> ルールベースAI</label>
-        <label><input type="radio" name="opponent_type" value="registered"> 登録AIから選ぶ</label>
-        <select class="agentSel" data-prefix="opponent" name="opponent_agent_id"></select>
-        {% if allow_upload %}<label><input type="radio" name="opponent_type" value="custom"> ファイルをアップロード</label>
-        <input class="agentFile" data-prefix="opponent" type="file" name="agent_file" accept=".py,.ipynb">{% endif %}
+      <h3>相手（プレイヤー2）＝ デッキ ＋ エージェント</h3>
+      <input type="hidden" name="opponent_select" value="combo">
+      <div class="comboLoad">
+        <select id="comboPickOpp"><option value="">― 保存した組合せから選ぶ ―</option></select>
       </div>
-      <div class="subBox deckBox" data-deck="opponent">
-        <div class="deckRow">
-          <select class="deckType" data-prefix="opponent" name="opponent_deck_mode">
-            <option value="user">保存済みデッキ</option>
-            <option value="agent">登録AIのデッキ</option>
-          </select>
-          <div class="deckTiles" data-prefix="opponent"></div>
+      <div class="comboCols">
+        <div class="comboCol">
+          <h4>🃏 デッキ</h4>
+          <div class="deckRow">
+            <select class="deckType" data-prefix="ocombo" name="opponent_deck_mode">
+              <option value="user">保存済みデッキ</option>
+              <option value="sample">サンプルデッキ</option>
+              <option value="agent">登録AIのデッキ</option>
+            </select>
+          </div>
+          <div class="deckTiles" data-prefix="ocombo"></div>
+          <div class="deckPreview" data-prefix="ocombo"></div>
+          <input type="hidden" name="opponent_deck_id" id="ocSampleId">
+          <input type="hidden" name="opponent_user_deck_id" id="ocUserId">
+          <input type="hidden" name="opponent_deck_agent_id" id="ocAgentDeckId">
+          <input type="hidden" name="opponent_deck_password" id="ocPwField">
         </div>
-        <div class="deckPreview" data-prefix="opponent"></div>
-        <input type="hidden" name="opponent_deck_id" id="oppDeckIdField">
-        <input type="hidden" name="opponent_user_deck_id" id="oppUserDeckIdField">
-        <input type="hidden" name="opponent_deck_agent_id" id="oDeckAgentId">
-        <input type="hidden" name="opponent_deck_password" id="oppDeckPasswordField">
+        <div class="comboCol">
+          <h4>🤖 エージェント</h4>
+          <select class="agentSel" data-prefix="ocombo" name="opponent_agent_id"></select>
+        </div>
       </div>
+      <small style="color:var(--sub)">選んだエージェントが、選んだデッキで対戦します（組合せは保存済みリストから読み込めます）。</small>
     </div>
     {% elif mode == 'pvp' %}
     <div class="choice">
@@ -228,12 +234,13 @@ const HID={
   player:{sample:'deckIdField',user:'userDeckIdField',agent:'pDeckAgentId'},
   opponent:{sample:'oppDeckIdField',user:'oppUserDeckIdField',agent:'oDeckAgentId'},
   pcombo:{sample:'pcSampleId',user:'pcUserId',agent:'pcAgentDeckId'},
+  ocombo:{sample:'ocSampleId',user:'ocUserId',agent:'ocAgentDeckId'},
 };
 function setHidden(prefix,type,id){
   Object.values(HID[prefix]).forEach(fid=>{const e=document.getElementById(fid);if(e)e.value='';});
   if(type in HID[prefix]){const e=document.getElementById(HID[prefix][type]);if(e)e.value=id||'';}
 }
-const PWFIELD={player:'deckPasswordField',opponent:'oppDeckPasswordField',pcombo:'pcPwField'};
+const PWFIELD={player:'deckPasswordField',opponent:'oppDeckPasswordField',pcombo:'pcPwField',ocombo:'ocPwField'};
 function setDeckPw(prefix,v){const e=document.getElementById(PWFIELD[prefix]);if(e)e.value=v||'';}
 // 表紙はデッキ内の代表ポケモンのカード画像。無い/非公開はカード裏面。
 function coverImg(cards){
@@ -341,6 +348,7 @@ get('/api/decks').then(c=>{
   initDeckPicker('player');
   initDeckPicker('opponent');
   initDeckPicker('pcombo');   // mode=ai のプレイヤー側デッキ（無いモードでは no-op）
+  initDeckPicker('ocombo');   // mode=ai の相手側デッキ（無いモードでは no-op）
 }).catch(()=>{});
 // 登録AI（相手AI選択・「登録AIのデッキ」用）は別途取得する。
 get('/api/config').then(c=>{
@@ -386,21 +394,23 @@ function pcDeck(){
   return {mode:m, id:idf?(document.getElementById(idf)||{}).value:''};
 }
 function loadCombos(){
-  const sel=document.getElementById('comboPick'); if(!sel)return;
+  // プレイヤー1(comboPick)・プレイヤー2(comboPickOpp)の両プルダウンを同じ組合せ一覧で埋める。
+  const sels=[document.getElementById('comboPick'),document.getElementById('comboPickOpp')].filter(Boolean);
+  if(!sels.length)return;
   get('/api/combos').then(d=>{
     const combos=d.combos||[];
-    sel.innerHTML='<option value="">― 保存した組合せから選ぶ ―</option>'+
+    const opts='<option value="">― 保存した組合せから選ぶ ―</option>'+
       combos.map(c=>`<option value="${c.id}">${escHtml(c.name)}（${escHtml(c.agent_label)} × ${escHtml(c.deck_label)}）</option>`).join('');
-    sel._combos=combos;
+    sels.forEach(sel=>{sel.innerHTML=opts;sel._combos=combos;});
   }).catch(()=>{});
 }
-function applyCombo(c){
-  const ts=document.querySelector('.deckType[data-prefix="pcombo"]');
+function applyCombo(c,prefix){
+  const ts=document.querySelector(`.deckType[data-prefix="${prefix}"]`);
   if(ts){ts.value=c.deck_mode||'user';ts.dispatchEvent(new Event('change'));}
   setTimeout(()=>{
-    const dt=document.querySelector(`.deckTiles[data-prefix="pcombo"] .deckTile[data-id="${c.deck_id}"]`);
+    const dt=document.querySelector(`.deckTiles[data-prefix="${prefix}"] .deckTile[data-id="${c.deck_id}"]`);
     if(dt)dt.click();
-    const at=document.querySelector(`.agentTiles[data-prefix="pcombo"] .deckTile[data-id="${c.agent_id}"]`);
+    const at=document.querySelector(`.agentTiles[data-prefix="${prefix}"] .deckTile[data-id="${c.agent_id}"]`);
     if(at)at.click();
   },40);
 }
@@ -411,7 +421,12 @@ if(MODE==='ai'){
     const id=e.currentTarget.value;
     document.getElementById('comboDelBtn').style.display=id?'':'none';
     const c=(e.currentTarget._combos||[]).find(x=>x.id===id);
-    if(c)applyCombo(c);
+    if(c)applyCombo(c,'pcombo');
+  };
+  const pickOpp=document.getElementById('comboPickOpp');
+  if(pickOpp) pickOpp.onchange=e=>{
+    const c=(e.currentTarget._combos||[]).find(x=>x.id===e.currentTarget.value);
+    if(c)applyCombo(c,'ocombo');
   };
   document.getElementById('comboSaveBtn').onclick=async()=>{
     const aSel=document.querySelector('.agentSel[data-prefix="pcombo"]');
@@ -443,7 +458,7 @@ document.getElementById('setupForm').onsubmit=async e=>{
     const idf={sample:'deck_id',user:'user_deck_id',agent:'deck_agent_id'}[dm];
     if(idf&&!fd.get(idf)){setMsg('あなたのデッキを選択してください。');return;}
   }else{fd.delete('deck_mode');fd.delete('deck_id');fd.delete('user_deck_id');fd.delete('deck_agent_id');}
-  if(MODE!=='pvp'){
+  if(MODE==='human'){
     const ot=val('opponent_type');
     if(ot==='registered'&&!fd.get('opponent_agent_id')){setMsg('相手の登録AIを選択してください。');return;}
     if(ot==='custom'&&(!document.querySelector('.agentFile[data-prefix=opponent]')||!document.querySelector('.agentFile[data-prefix=opponent]').files.length)){setMsg('相手AIのファイルを選択してください。');return;}
@@ -460,6 +475,11 @@ document.getElementById('setupForm').onsubmit=async e=>{
     const pdm=fd.get('player_deck_mode');
     const idf={sample:'player_deck_id',user:'player_user_deck_id',agent:'player_deck_agent_id'}[pdm];
     if(!idf||!fd.get(idf)){setMsg('あなたのデッキを選んでください。');return;}
+    // 相手側＝デッキ+エージェントの組合せ
+    if(!fd.get('opponent_agent_id')){setMsg('相手のエージェントを選んでください。');return;}
+    const odm=fd.get('opponent_deck_mode');
+    const oidf={sample:'opponent_deck_id',user:'opponent_user_deck_id',agent:'opponent_deck_agent_id'}[odm];
+    if(!oidf||!fd.get(oidf)){setMsg('相手のデッキを選んでください。');return;}
   }
   setMsg('対戦を準備中…');
   const r=await fetch('/api/new',{method:'POST',body:fd});

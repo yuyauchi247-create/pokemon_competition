@@ -15,6 +15,10 @@
   .scoreCard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 22px;margin:10px 0;display:flex;align-items:center;gap:24px;flex-wrap:wrap;}
   .scoreCard .big{font-size:42px;font-weight:900;color:var(--teal);line-height:1;}
   .scoreCard .wld{font-size:14px;color:var(--muted);}
+  .deckTiles .deckTile.evDis{opacity:.45;pointer-events:none;}
+  .dlBtn{display:inline-block;background:var(--teal);color:#fff;font-weight:800;font-size:13px;
+         padding:10px 16px;border-radius:10px;text-decoration:none;white-space:nowrap;}
+  .dlBtn:hover{filter:brightness(1.06);}
   .tbl td.win{background:#e8f6ee;color:#1f7a44;font-weight:800;}
   .tbl td.lose{background:#ffeef0;color:#9b2a3a;font-weight:800;}
   .spin{display:inline-block;animation:sp 1s linear infinite;}
@@ -43,22 +47,84 @@
 <div class="page">
   <div class="crumb"><a href="/">ホーム</a> › 個別AI評価</div>
   <h2 class="pageTitle">個別AI評価（1体 vs 全体）</h2>
-  <p class="pageLead">評価したいAIをカードから選ぶと、他の全AIと先攻/後攻で各{{10}}試合ずつ対戦し、対フィールド勝率と相手別の得意/苦手を出します（総当たり全体より速く・軽い）。</p>
+  <p class="pageLead">評価したいAIをカードから選ぶと、他の全AIと先攻/後攻で対戦し（試合数は選択可）、対フィールド勝率と相手別の得意/苦手を出します（総当たり全体より速く・軽い）。</p>
   <div class="evalBar">
     <div id="selInfo" class="hint" style="margin:0">評価したいAIを下のカードから選んでください。</div>
-    <button id="runBtn" disabled style="margin-left:auto">評価を開始</button>
+    <label class="hint" style="margin:0 0 0 auto;display:flex;align-items:center;gap:4px">各AIと
+      <select id="evGames" style="border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-weight:800;background:#fff">
+        <option value="2">2</option>
+        <option value="5">5</option>
+        <option value="10" selected>10</option>
+        <option value="20">20</option>
+        <option value="30">30</option>
+      </select>試合（先攻/後攻 各）</label>
+    <button id="runBtn" disabled>評価を開始</button>
   </div>
   <div id="msg" class="hint"></div>
   <div id="result"></div>
-  <div class="sect">登録AI（クリックで選択）</div>
+  <div class="sect">🤖 評価したいAI（クリックで選択）</div>
   <div id="agentGrid" class="agentGrid"></div>
+  <div class="sect">🃏 評価に使うデッキ</div>
+  <p class="hint" style="margin:0 0 8px">未選択ならそのAIの同梱デッキで評価します。デッキを選ぶと「選んだエージェント × 選んだデッキ」で評価できます。</p>
+  <div class="deckRow" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0">
+    <select id="evDeckType" style="border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff;min-width:200px">
+      <option value="">AI同梱デッキ（差し替えない）</option>
+      <option value="user">保存済みデッキ</option>
+      <option value="agent">登録AIのデッキ</option>
+    </select>
+  </div>
+  <div class="deckTiles" id="evDeckTiles"></div>
+  <input type="hidden" id="evDeckMode"><input type="hidden" id="evDeckId">
 </div>
 {% endblock %}
 
 {% block script %}
 <script>
-let POLL=null, AGENTS=[], SELECTED=null;
+let POLL=null, AGENTS=[], SELECTED=null, SAMPLE=[], USER=[];
 function setMsg(m=''){document.getElementById('msg').innerHTML=m;}
+function coverImg(cards){
+  if(!cards||!cards.length)return null;
+  const poke=cards.find(c=>c.cardType==='POKEMON'&&c.img);
+  return (poke&&poke.img)||(cards.find(c=>c.img)||{}).img||null;
+}
+// 評価用デッキピッカー（非公開デッキは対象外）
+function evDecksFor(type){
+  if(type==='sample')return SAMPLE;
+  if(type==='user')return USER.filter(d=>!d.private);
+  if(type==='agent')return AGENTS.filter(a=>a.cards&&a.cards.length);
+  return [];
+}
+function selInfoText(){
+  const a=AGENTS.find(x=>x.id===SELECTED);
+  const dm=document.getElementById('evDeckMode').value, di=document.getElementById('evDeckId').value;
+  let dn='AI同梱デッキ';
+  if(dm&&di){const ds=evDecksFor(dm); const d=ds.find(x=>String(x.id)===String(di)); dn=d?d.name:'選択デッキ';}
+  document.getElementById('selInfo').innerHTML=SELECTED?`選択中: <b>${a?a.name:''}</b> × <b>${dn}</b>`:'評価したいAIを下のカードから選んでください。';
+}
+function initEvDeckPicker(){
+  const typeSel=document.getElementById('evDeckType');
+  const tiles=document.getElementById('evDeckTiles');
+  const modeF=document.getElementById('evDeckMode'), idF=document.getElementById('evDeckId');
+  function selectDeck(d){
+    if(!d||d.hasBasic===false)return;
+    modeF.value=typeSel.value; idF.value=d.id;
+    tiles.querySelectorAll('.deckTile').forEach(t=>t.classList.toggle('sel',t.dataset.id===String(d.id)));
+    selInfoText();
+  }
+  function refresh(){
+    const type=typeSel.value; modeF.value=''; idF.value='';
+    if(!type){tiles.innerHTML='<div class="hint">そのAIの同梱デッキで評価します。</div>';selInfoText();return;}
+    const ds=evDecksFor(type);
+    tiles.innerHTML=ds.length?ds.map(d=>{
+      const dis=d.hasBasic===false;
+      return `<div class="deckTile${dis?' evDis':''}" data-id="${d.id}"><img class="cover" src="${coverImg(d.cards)||'/card_back'}" alt="" loading="lazy"><div class="dknm">${d.name}${dis?'<br><small>⚠たね無し</small>':''}</div></div>`;
+    }).join(''):'<div class="hint">デッキがありません。</div>';
+    tiles.querySelectorAll('.deckTile').forEach(t=>{const d=ds.find(x=>String(x.id)===t.dataset.id);t.onclick=()=>selectDeck(d);});
+    const first=ds.find(d=>d.hasBasic!==false);
+    if(first)selectDeck(first); else selInfoText();
+  }
+  typeSel.addEventListener('change',refresh); refresh();
+}
 function deckCardsHtml(cards){
   return (cards||[]).map(c=>{
     const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name||('ID'+c.id)}</div>`;
@@ -81,16 +147,17 @@ function selectAgent(el){
   document.querySelectorAll('.agentCard.sel').forEach(x=>x.classList.remove('sel'));
   el.classList.add('sel');
   SELECTED=el.dataset.id;
-  const a=AGENTS.find(x=>x.id===SELECTED);
-  document.getElementById('selInfo').innerHTML=`選択中: <b>${a?a.name:''}</b>`;
+  selInfoText();
   document.getElementById('runBtn').disabled=false;
 }
-function renderResult(r){
+function renderResult(r,jobId){
   const c=r.challenger, vs=r.vs||[];
+  const dlBtn=jobId?`<a class="dlBtn" href="/api/evaluate/${encodeURIComponent(jobId)}/download" download>⬇ 結果をZIPでダウンロード</a>`:'';
   let html=`<div class="scoreCard">
       <div><div class="big">${c.winRate}%</div><div class="wld">対フィールド勝率</div></div>
       <div><div class="wld">${c.name}</div><div class="wld">${c.wins}勝 ${c.losses}敗 ${c.draws}分 ／ ${c.games}試合</div>
            <div class="wld">対戦相手 ${vs.length}体・${r.games_per_pair}試合/相手・${r.elapsed_s}秒</div></div>
+      <div style="margin-left:auto;align-self:center">${dlBtn}</div>
     </div>`;
   html+='<div class="sect">相手別の成績（勝ち数順）</div>';
   html+='<table class="tbl"><tr><th>相手AI</th><th>勝</th><th>敗</th><th>分</th><th>勝率</th></tr>';
@@ -105,8 +172,8 @@ async function poll(jobId){
   const d=await get('/api/evaluate/'+jobId);
   if(d.status==='done'){
     clearInterval(POLL);POLL=null;
-    setMsg(`完了: ${d.meta.name}`);
-    renderResult(d.result);
+    setMsg(`完了: ${d.meta.name}${d.meta.deck_label?' × '+d.meta.deck_label:''}`);
+    renderResult(d.result,jobId);
     document.getElementById('runBtn').disabled=false;
   }else if(d.status==='failed'){
     clearInterval(POLL);POLL=null;
@@ -124,12 +191,20 @@ document.getElementById('runBtn').onclick=async()=>{
   document.getElementById('runBtn').disabled=true;
   document.getElementById('result').innerHTML='';
   setMsg('<span class="spin">⏳</span> 評価を開始しています…');
-  const r=await post('/api/evaluate',{agent_id:SELECTED});
+  const body={agent_id:SELECTED};
+  const dm=document.getElementById('evDeckMode').value, di=document.getElementById('evDeckId').value;
+  if(dm&&di){body.deck_mode=dm; body.deck_id=di;}
+  body.games_per_pair=+document.getElementById('evGames').value||10;
+  const r=await post('/api/evaluate',body);
   if(r.error){setMsg(r.error);document.getElementById('runBtn').disabled=false;return;}
   if(POLL)clearInterval(POLL);
   POLL=setInterval(()=>poll(r.job_id),3000);
   poll(r.job_id);
 };
-loadAgents();
+// 登録AI→デッキ一覧の順に取得し、両方そろってからデッキピッカーを初期化する。
+loadAgents().then(()=>get('/api/decks')).then(c=>{
+  if(c){SAMPLE=c.sampleDecks||[];USER=c.userDecks||[];}
+  initEvDeckPicker();
+}).catch(()=>initEvDeckPicker());
 </script>
 {% endblock %}

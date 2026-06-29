@@ -246,6 +246,8 @@ def main():
                     help="設定すると各試合の全行動ログ(対戦と同じ形式)をこのフォルダに保存")
     ap.add_argument("--log-frames", action="store_true",
                     help="盤面スナップショット(frames)も保存（重い。既定は行動ログのみ）")
+    ap.add_argument("--challenger-deck-file", default="",
+                    help="挑戦者のデッキを上書きするファイル(カードID羅列)。combo評価用。")
     ap.add_argument("--out", default=str(ROOT / "data" / "tournament_result.json"))
     args = ap.parse_args()
 
@@ -261,11 +263,21 @@ def main():
         metas = [metas[i] for i in idx]
     elif args.limit:
         metas = metas[:args.limit]
+    # combo評価: 挑戦者(--challenger と同一ID)のデッキだけを差し替える。
+    override_deck = None
+    if args.challenger_deck_file:
+        try:
+            txt = Path(args.challenger_deck_file).read_text(encoding="utf-8")
+            cards = [int(x) for x in txt.replace(",", " ").split() if x.strip()]
+            override_deck = cards if len(cards) == 60 else None
+        except Exception as e:
+            print(f"  challenger deck override failed: {e}", flush=True)
     print(f"loading {len(metas)} agents...", flush=True)
     t0 = time.time()
     for m in metas:
         try:
-            a = S._load_registered_agent(m["id"])
+            od = override_deck if (override_deck and m["id"] == args.challenger) else None
+            a = S._load_registered_agent(m["id"], override_deck=od)
             a["name"], a["id"] = m["name"], m["id"]
             AGENTS.append(a)
         except Exception as e:

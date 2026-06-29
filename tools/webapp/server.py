@@ -348,6 +348,9 @@ def _load_agent_side(gid, side, atype, file_field, id_field, default_deck):
 
 
 def _selected_opponent(gid, default_deck):
+    # AI vs AI 観戦: 相手側も「デッキ＋エージェント」の組合せで選ぶ（プレイヤー側と対称）。
+    if request.form.get("opponent_select") == "combo":
+        return _opponent_combo_side(gid)
     mode = request.form.get("opponent_type", "rule")
     if mode == "rule":
         # ルールベースAI: 相手デッキも一覧から選べる。
@@ -444,6 +447,23 @@ def _player_combo_side(gid):
     return "custom", agent, used_deck, f"{name} × {deck_label}"
 
 
+def _opponent_combo_side(gid):
+    """相手側=「デッキ」＋「エージェント」の組合せ。_player_combo_side と対称。"""
+    aid = (request.form.get("opponent_agent_id") or "").strip()
+    if not aid:
+        raise SelectionError("相手に使うエージェントを選んでください。")
+    deck, deck_label = _selected_deck(
+        "opponent_deck_mode", "opponent_deck_id", "opponent_user_deck_id", "opponent_deck_file",
+        agent_id_field="opponent_deck_agent_id", pw_field="opponent_deck_password")
+    _require_basic_deck(deck)
+    code = read_user_agent_code(aid)
+    name = next((a["name"] for a in list_user_agents() if a["id"] == aid), aid)
+    agent, used_deck, _src = _materialize_agent(
+        gid, "opponent", code, f"AI（{name}）", deck,
+        forced_deck=deck, extra_src=user_agent_dir(aid))
+    return "custom", agent, used_deck, f"{name} × {deck_label}"
+
+
 def _resolve_registered_agent_deck(aid):
     """登録時、静的に読めなかったAIに初期デッキを問い合わせて meta に保存する。
 
@@ -465,8 +485,13 @@ def _resolve_registered_agent_deck(aid):
         return None
 
 
-def _load_registered_agent(aid):
-    """登録AIを読み込み {agent,deck} を返す（総当たり用）。"""
+def _load_registered_agent(aid, override_deck=None):
+    """登録AIを読み込み {agent,deck} を返す（総当たり用）。
+
+    override_deck（60枚）を渡すと、AI同梱デッキの代わりにそのデッキで動かす
+    （個別AI評価の combo: エージェント×任意デッキ）。deck.csv を読むAIにも効くよう
+    import 前に deck.csv へ書き出す。
+    """
     code = read_user_agent_code(aid)
     d = Path(tempfile.gettempdir()) / "pokemon_competition_tournament" / aid
     if d.exists():
@@ -474,11 +499,14 @@ def _load_registered_agent(aid):
     d.mkdir(parents=True, exist_ok=True)
     (d / "main.py").write_text(code, encoding="utf-8")
     _copy_sibling_modules(user_agent_dir(aid), d)  # 同梱の別モジュール(*.py)も複製
-    deck = read_user_agent_deck(aid)  # 保存済みデッキ(Kaggle回収等)を優先
-    if deck is None:
-        deck = parse_decklist_comments(code)
-    if deck is None:
-        deck = _ask_agent_for_deck(d, read_sample_deck(SAMPLE_DECKS[0]["id"]))
+    if override_deck and len(override_deck) == 60:
+        deck = list(override_deck)
+    else:
+        deck = read_user_agent_deck(aid)  # 保存済みデッキ(Kaggle回収等)を優先
+        if deck is None:
+            deck = parse_decklist_comments(code)
+        if deck is None:
+            deck = _ask_agent_for_deck(d, read_sample_deck(SAMPLE_DECKS[0]["id"]))
     (d / "deck.csv").write_text("\n".join(str(c) for c in deck) + "\n", encoding="utf-8")
     agent = _import_agent_in_dir(d)
     return {"agent": agent, "deck": deck}
@@ -997,6 +1025,39 @@ def api_evaluate_start():
     m = next((x for x in metas if x["id"] == aid), None)
     if m is None:
         return _selection_error("指定のAIが見つかりません。")
+
+    # combo評価: 評価対象のデッキを差し替える（任意。未指定なら従来の同梱デッキ）。
+    override_deck = None
+    deck_label = ""
+    deck_mode = (data.get("deck_mode") or "").strip()
+    deck_id = (data.get("deck_id") or "").strip()
+    if deck_mode and deck_id:
+        try:
+            if deck_mode == "user":
+                override_deck = read_user_deck(deck_id)
+                deck_label = next((d["name"] for d in list_user_decks()
+                                   if d["id"] == deck_id), "保存済みデッキ")
+            elif deck_mode == "agent":
+                override_deck = _agent_deck_list(deck_id)
+                deck_label = next((a["name"] for a in metas
+                                   if a["id"] == deck_id), "登録AIのデッキ")
+            else:  # sample
+                override_deck = read_sample_deck(deck_id)
+                deck_label = "サンプルデッキ"
+        except SelectionError as exc:
+            return _selection_error(str(exc))
+        except Exception:
+            return _selection_error("評価用デッキの読み込みに失敗しました。")
+        if not override_deck or len(override_deck) != 60 or not deck_has_basic(override_deck):
+            return _selection_error("選んだデッキが不正です（60枚・たねポケモン必須）。")
+
+    # 各相手との対戦数（先攻/後攻で各 gpp 試合）。既定 EVAL_GAMES_PER_PAIR。1〜50に制限。
+    try:
+        gpp = int(data.get("games_per_pair"))
+    except (TypeError, ValueError):
+        gpp = EVAL_GAMES_PER_PAIR
+    gpp = max(1, min(50, gpp))
+
     EVAL_JOBS_DIR.mkdir(parents=True, exist_ok=True)
     job_id = uuid.uuid4().hex[:12]
     jobfile = EVAL_JOBS_DIR / f"{job_id}.json"
@@ -1005,11 +1066,15 @@ def api_evaluate_start():
     eval_log_dir = LOGS_DIR / "eval" / job_id
     cmd = [sys.executable, "tools/run_tournament.py",
            "--challenger", aid,
-           "--games-per-pair", str(EVAL_GAMES_PER_PAIR),
+           "--games-per-pair", str(gpp),
            "--workers", str(workers),
            "--progress-file", str(EVAL_JOBS_DIR / f"{job_id}.progress"),
            "--log-dir", str(eval_log_dir),
            "--out", str(jobfile)]
+    if override_deck:
+        deck_file = EVAL_JOBS_DIR / f"{job_id}.deck.csv"
+        deck_file.write_text("\n".join(str(c) for c in override_deck) + "\n", encoding="utf-8")
+        cmd += ["--challenger-deck-file", str(deck_file)]
     proc = subprocess.Popen(
         cmd, cwd=str(APP_ROOT),
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -1017,12 +1082,13 @@ def api_evaluate_start():
     (EVAL_JOBS_DIR / f"{job_id}.meta").write_text(json.dumps({
         "agent_id": aid, "name": m["name"], "pid": proc.pid,
         "opponents": len(metas) - 1,
-        "games_per_pair": EVAL_GAMES_PER_PAIR,
+        "games_per_pair": gpp,
         "log_dir": str(eval_log_dir),
+        "deck_label": deck_label,  # combo評価で差し替えたデッキ名（同梱デッキなら空）
         "started_at": datetime.now(timezone.utc).isoformat(),
     }), encoding="utf-8")
     return jsonify({"job_id": job_id, "name": m["name"],
-                    "opponents": len(metas) - 1})
+                    "opponents": len(metas) - 1, "deck_label": deck_label})
 
 
 @app.route("/api/evaluate/<job_id>", methods=["GET"])
@@ -1051,6 +1117,74 @@ def api_evaluate_status(job_id):
     if not jobfile.exists() and not _pid_alive(meta.get("pid")):
         return jsonify({"status": "failed", "meta": meta, "progress": prog})
     return jsonify({"status": "running", "meta": meta, "progress": prog})
+
+
+@app.route("/api/evaluate/<job_id>/download", methods=["GET"])
+def api_evaluate_download(job_id):
+    """個別AI評価の結果一式（サマリ・相手別CSV・各試合ログ）をZIPで返す。
+
+    ZIP はメモリ上(BytesIO)で組み立てて送るだけで、サーバのディスクには残さない
+    （= ダウンロード後にローカルへ保存されず、削除する手間も無い）。
+    """
+    if not job_id.isalnum():
+        abort(404)
+    metafile = EVAL_JOBS_DIR / f"{job_id}.meta"
+    jobfile = EVAL_JOBS_DIR / f"{job_id}.json"
+    if not metafile.exists():
+        abort(404)
+    if not jobfile.exists():
+        return jsonify({"error": "評価がまだ完了していません。"}), 409
+    try:
+        meta = json.loads(metafile.read_text(encoding="utf-8"))
+        result = json.loads(jobfile.read_text(encoding="utf-8"))
+    except Exception:
+        return jsonify({"error": "評価結果がまだ読み込めません。"}), 409
+
+    summary = result.get("challenger", {})
+    vs = result.get("vs", [])
+
+    # 相手別成績CSV（Excelでの文字化け回避に BOM 付き UTF-8、改行は CRLF）
+    def _cell(v):
+        return '"' + ("" if v is None else str(v)).replace('"', '""') + '"'
+    rows = ["相手AI,勝,敗,分,試合,勝率(%)"]
+    for s in vs:
+        rows.append(",".join(_cell(s.get(k)) for k in
+                             ("name", "wins", "losses", "draws", "games", "winRate")))
+    csv_text = "﻿" + "\r\n".join(rows) + "\r\n"
+
+    txt = (
+        "個別AI評価 結果\n================\n"
+        f"評価AI: {meta.get('name')} (id={meta.get('agent_id')})\n"
+        f"対フィールド勝率: {summary.get('winRate')}%\n"
+        f"成績: {summary.get('wins')}勝 {summary.get('losses')}敗 "
+        f"{summary.get('draws')}分 / {summary.get('games')}試合\n"
+        f"対戦相手: {len(vs)}体・{result.get('games_per_pair')}試合/相手\n"
+        f"所要時間: {result.get('elapsed_s')}秒\n"
+        f"開始時刻: {meta.get('started_at')}\n"
+    )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("summary.txt", txt)
+        zf.writestr("summary.json", json.dumps(
+            {"meta": meta, "result": result}, ensure_ascii=False, indent=2))
+        zf.writestr("per_opponent.csv", csv_text)
+        # 各試合の行動ログ（あれば同梱）
+        log_dir = Path(meta.get("log_dir") or (LOGS_DIR / "eval" / job_id))
+        if log_dir.exists():
+            for p in sorted(log_dir.glob("*.json")):
+                zf.write(p, arcname=f"match_logs/{p.name}")
+
+    data = buf.getvalue()
+    # Content-Disposition は latin-1 のみ。ファイル名は ASCII 英数字に限定する
+    # （日本語等は isalnum() が True になりヘッダのエンコードを壊すため除外）。
+    safe = "".join(ch if (ch.isascii() and (ch.isalnum() or ch in "-_.")) else "_"
+                   for ch in str(meta.get("name") or "agent"))[:40].strip("_") or "agent"
+    fname = f"eval_{safe}_{job_id}.zip"
+    resp = Response(data, mimetype="application/zip")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    resp.headers["Content-Length"] = str(len(data))
+    return resp
 
 
 @app.route("/api/tournament", methods=["POST"])
