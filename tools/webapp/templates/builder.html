@@ -29,6 +29,10 @@
       <select id="flagFilter"><option value="">レアリティ問わず</option><option value="ex">ポケモンex</option><option value="MEGA">メガex</option><option value="tera">テラスタル</option><option value="ACE">ACE SPEC</option></select>
       <select id="sortBy"><option value="">並び: ID順</option><option value="hp">HP高い順</option><option value="dmg">攻撃力高い順</option><option value="type">タイプ順</option></select>
     </div>
+    <div class="favBar" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px">
+      <button type="button" id="favFilterBtn" class="gray">☆ お気に入りのみ</button>
+      <span id="favCount" class="hint"></span>
+    </div>
     <div class="deckVisibility" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px">
       <span class="handLabel">公開設定</span>
       <label><input type="radio" name="deckVis" value="public" checked> 公開</label>
@@ -57,6 +61,30 @@
 {% block script %}
 <script>
 let ALL_CARDS=[], CURRENT_DECK=[], EDIT_ID=null;
+// お気に入りカード（サーバ保存・全利用者で共有: data/favorites/favorites.json）
+let FAVORITES=new Set(), FAV_ONLY=false;
+async function loadFav(){
+  try{const d=await get('/api/favorites');FAVORITES=new Set((d.cards||[]).map(Number));}
+  catch(e){FAVORITES=new Set();}
+  updateFavBar();
+}
+async function saveFav(){
+  try{
+    const r=await fetch('/api/favorites',{method:'PUT',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({cards:[...FAVORITES]})});
+    const d=await r.json();
+    if(d&&Array.isArray(d.cards))FAVORITES=new Set(d.cards.map(Number));
+  }catch(e){}
+  updateFavBar();
+}
+function isFav(id){return FAVORITES.has(id);}
+function toggleFav(id){FAVORITES.has(id)?FAVORITES.delete(id):FAVORITES.add(id);updateFavBar();saveFav();}
+function updateFavBar(){
+  const btn=document.getElementById('favFilterBtn');
+  if(btn){btn.textContent=(FAV_ONLY?'★ お気に入りのみ表示中':'☆ お気に入りのみ');btn.classList.toggle('active',FAV_ONLY);}
+  const c=document.getElementById('favCount');
+  if(c)c.textContent=`お気に入り ${FAVORITES.size}枚`;
+}
 const BASIC_ENERGY=new Set([1,2,3,4,5,6,7,8]);
 const ACE_SPEC_IDS=new Set([10,12,13,1080,1082,1085,1088,1089,1092,1093,1095,1096,1100,1104,1107,1109,1110,1111,1125,1126,1128,1155,1158,1159,1165,1167,1169,1247,1249]);
 
@@ -76,7 +104,7 @@ function renderCardLibrary(){
   const fl=document.getElementById('flagFilter').value;
   const sort=document.getElementById('sortBy').value;
   const counts=deckCounts();
-  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q)||(c.effectText||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et)&&(!fl||(c.flags||[]).includes(fl)));
+  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q)||(c.effectText||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et)&&(!fl||(c.flags||[]).includes(fl))&&(!FAV_ONLY||FAVORITES.has(c.id)));
   if(sort==='hp')        cards=cards.slice().sort((a,b)=>(b.hp||0)-(a.hp||0)||a.id-b.id);
   else if(sort==='dmg')  cards=cards.slice().sort((a,b)=>(b.maxDamage||0)-(a.maxDamage||0)||a.id-b.id);
   else if(sort==='type') cards=cards.slice().sort((a,b)=>String(a.type||'').localeCompare(String(b.type||''))||a.id-b.id);
@@ -86,8 +114,9 @@ function renderCardLibrary(){
     const maxed=(!BASIC_ENERGY.has(c.id)&&cnt>=4)||(ACE_SPEC_IDS.has(c.id)&&(cnt>=1||deckHasAceSpec()));
     const have=cnt?`<div class="have${maxed?' maxed':''}">×${cnt}</div>`:'';
     const stat=c.hp?`<div class="cid">HP${c.hp}${c.maxDamage?` ⚔${c.maxDamage}`:''}</div>`:'';
-    return `<div class="libCard${maxed?' disabled':''}" data-id="${c.id}" title="${c.name} ID:${c.id}">${inner}<div class="cid">ID:${c.id}</div>${stat}${have}<div class="nm">${c.name}</div></div>`;
-  }).join('')||'<div class="hint">該当カードがありません</div>';
+    const fav=isFav(c.id)?'<div class="favMark">★</div>':'';
+    return `<div class="libCard${maxed?' disabled':''}" data-id="${c.id}" title="${c.name} ID:${c.id}">${inner}${fav}<div class="cid">ID:${c.id}</div>${stat}${have}<div class="nm">${c.name}</div></div>`;
+  }).join('')||`<div class="hint">${FAV_ONLY?'お気に入りに登録したカードがありません。カード詳細の「☆ お気に入りに追加」で登録できます。':'該当カードがありません'}</div>`;
   const libIds=cards.map(c=>c.id);
   document.querySelectorAll('#cardLibrary .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id,false,libIds));
 }
@@ -133,8 +162,11 @@ async function openBuilderCard(cid, readonly, list){
     ${body}
     <div class="acts">
       ${editBtns}
+      <button class="gray${isFav(cid)?' on':''}" id="modalFavBtn">${isFav(cid)?'★ お気に入り解除':'☆ お気に入りに追加'}</button>
       <button class="gray" onclick="closeModal()">閉じる</button>
     </div>`;
+  const favBtn=document.getElementById('modalFavBtn');
+  if(favBtn) favBtn.onclick=()=>{toggleFav(cid);openBuilderCard(cid, readonly, list);renderCardLibrary();};
   const inc=document.getElementById('modalIncBtn');
   if(inc&&!addDisabled) inc.onclick=()=>{addCard(cid);openBuilderCard(cid, readonly, list);};
   const dec=document.getElementById('modalDecBtn');
@@ -233,6 +265,7 @@ function togglePwInput(){
 document.querySelectorAll('input[name="deckVis"]').forEach(r=>r.addEventListener('change',togglePwInput));
 
 ['cardSearch','cardTypeFilter','energyFilter','flagFilter','sortBy'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
+document.getElementById('favFilterBtn').onclick=()=>{FAV_ONLY=!FAV_ONLY;updateFavBar();renderCardLibrary();};
 document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/decks';};
 document.getElementById('saveDeckBtn').onclick=saveBuilderDeck;
 
@@ -298,6 +331,7 @@ document.getElementById('deckCsvFile').onchange=async e=>{
   e.target.value='';
 };
 
+loadFav().then(()=>{if(ALL_CARDS.length)renderCardLibrary();});
 document.getElementById('cardLibrary').innerHTML='<div class="hint">カード一覧を読み込み中…</div>';
 get('/api/cards').then(d=>{ALL_CARDS=d.cards||[];renderCardLibrary();maybeLoadEdit();});
 renderBuilderDeck();

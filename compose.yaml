@@ -15,6 +15,8 @@ services:
       - ./data/user_decks:/app/data/user_decks
       # 登録したAIエージェントを残す
       - ./data/user_agents:/app/data/user_agents
+      # お気に入りカード（全利用者共有）を再ビルド後も残す
+      - ./data/favorites:/app/data/favorites
       # 対戦ログ（対戦ごとに1ファイル）をホストに残す
       - ./data/logs:/app/data/logs
     # コンテナを作り直さずコード変更を反映したい場合は以下を有効化

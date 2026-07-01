@@ -22,6 +22,7 @@ SAMPLE_DECKS_DIR = ROOT / "data" / "sample_decks"
 USER_DECKS_DIR = ROOT / "data" / "user_decks"
 USER_AGENTS_DIR = ROOT / "data" / "user_agents"
 USER_COMBOS_DIR = ROOT / "data" / "user_combos"
+FAVORITES_DIR = ROOT / "data" / "favorites"
 CARD_DATA_CSV = ROOT / "data" / "JP_Card_Data.csv"
 DEFAULT_SAMPLE_DECK = SAMPLE_SUBMISSION / "deck.csv"
 VALID_CARD_MIN = 1
@@ -271,6 +272,47 @@ def _safe_user_deck_path(deck_id: str, decks_dir: Path | None = None) -> Path:
 
 def read_user_deck(deck_id: str, decks_dir: Path | None = None) -> list[int]:
     return read_deck_csv_file(_safe_user_deck_path(deck_id, decks_dir))
+
+
+# ===== お気に入りカード（全利用者で共有・data/favorites/favorites.json） =====
+def _sanitize_favorites(ids) -> list[int]:
+    """有効なカードID(1..1267)のみを重複排除・順序保持で返す。"""
+    seen: set[int] = set()
+    out: list[int] = []
+    for v in (ids or []):
+        try:
+            cid = int(v)
+        except (TypeError, ValueError):
+            continue
+        if VALID_CARD_MIN <= cid <= VALID_CARD_MAX and cid not in seen:
+            seen.add(cid)
+            out.append(cid)
+    return out
+
+
+def read_favorites(fav_dir: Path | None = None) -> list[int]:
+    """お気に入りカードID一覧を読み込む。ファイル無し/壊れは空扱い。"""
+    base = fav_dir or FAVORITES_DIR
+    path = base / "favorites.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    ids = data.get("cards", []) if isinstance(data, dict) else data
+    return _sanitize_favorites(ids)
+
+
+def save_favorites(ids, fav_dir: Path | None = None) -> list[int]:
+    """お気に入りカードID一覧を保存し、正規化後の一覧を返す。"""
+    clean = _sanitize_favorites(ids)
+    base = fav_dir or FAVORITES_DIR
+    base.mkdir(parents=True, exist_ok=True)
+    payload = {"cards": clean, "updated": int(time.time() * 1000)}
+    (base / "favorites.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return clean
 
 
 def list_user_decks(decks_dir: Path | None = None) -> list[dict[str, str]]:

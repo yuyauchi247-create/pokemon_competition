@@ -41,6 +41,7 @@ from selection import (  # noqa: E402
     validate_ai_picks, validate_deck_for_builder, deck_has_basic,
     deck_is_private, check_deck_password,
     list_user_combos, save_user_combo, read_user_combo, delete_user_combo,
+    read_favorites, save_favorites,
 )
 from sim_env import (  # noqa: E402
     to_observation_class, battle_start, battle_select, battle_finish,
@@ -1663,6 +1664,16 @@ def api_delete_user_deck(deck_id):
 @app.route("/api/card/<int:cid>", methods=["GET"])
 def api_card(cid):
     return jsonify(card_detail(cid))
+
+
+@app.route("/api/favorites", methods=["GET", "PUT"])
+def api_favorites():
+    """お気に入りカードID一覧（全利用者で共有・data/favorites に永続）。"""
+    if request.method == "GET":
+        return jsonify({"cards": read_favorites()})
+    payload = request.get_json(force=True, silent=True) or {}
+    cards = save_favorites(payload.get("cards", []))
+    return jsonify({"cards": cards})
 
 
 @app.route("/card_img/<int:cid>", methods=["GET"])
