@@ -41,6 +41,7 @@ services:
       - ./data/card_images:/app/data/card_images:ro
       - ./data/user_decks:/app/data/user_decks
       - ./data/user_agents:/app/data/user_agents
+      - ./data/favorites:/app/data/favorites
       - ./data/logs:/app/data/logs
     # ホストにはポートを公開しない（Caddy 経由のみアクセス可能）
     expose:
