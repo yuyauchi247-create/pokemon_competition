@@ -32,8 +32,7 @@
     <div class="favBar" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px">
       <span class="handLabel">⭐ お気に入り</span>
       <select id="favCatFilter" title="お気に入りカテゴリで絞り込み"><option value="">絞り込みなし</option></select>
-      <button type="button" id="favCatRenameBtn" class="gray" style="display:none">名前変更</button>
-      <button type="button" id="favCatDeleteBtn" class="gray" style="display:none">カテゴリ削除</button>
+      <button type="button" id="favManageBtn" class="gray">カテゴリ管理</button>
       <span id="favCount" class="hint"></span>
     </div>
     <div class="deckVisibility" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px">
@@ -124,12 +123,49 @@ function renderFavBar(){
     sel.value=FAV_CATS.some(c=>c.id===cur)||cur==='__all'||cur===''?cur:'';
     if(sel.value!==cur)FAV_FILTER=sel.value;
   }
-  const isCat=!!findCat(FAV_FILTER);
-  const del=document.getElementById('favCatDeleteBtn'),ren=document.getElementById('favCatRenameBtn');
-  if(del)del.style.display=isCat?'':'none';
-  if(ren)ren.style.display=isCat?'':'none';
   const c=document.getElementById('favCount');
   if(c)c.textContent=`カテゴリ${FAV_CATS.length}件 / お気に入り${favTotal()}枚`;
+}
+// カテゴリ管理パネル（横断で名前変更・削除・新規作成）。既存の #modal を流用。
+function openCategoryManager(){
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const rows=FAV_CATS.length
+    ? FAV_CATS.map(c=>`
+      <div class="catRow" data-cat="${c.id}">
+        <input class="catNameInput" data-cat="${c.id}" maxlength="40" value="${esc(c.name)}">
+        <span class="hint">${c.cards.size}枚</span>
+        <button type="button" class="gray catRenameBtn" data-cat="${c.id}">名前を保存</button>
+        <button type="button" class="gray catDelBtn" data-cat="${c.id}">削除</button>
+      </div>`).join('')
+    : '<div class="hint">カテゴリがありません。下で作成できます。</div>';
+  document.getElementById('modal').innerHTML=`
+    <h3>⭐ お気に入りカテゴリの管理</h3>
+    <div class="catManage">${rows}
+      <div class="catNewRow">
+        <input id="catMgrNew" maxlength="40" placeholder="新規カテゴリ名（例: 水軸デッキ）">
+        <button type="button" class="gray" id="catMgrNewBtn">＋作成</button>
+      </div>
+    </div>
+    <div class="acts"><button class="gray" onclick="closeModal()">閉じる</button></div>`;
+  document.querySelectorAll('#modal .catRenameBtn').forEach(b=>b.onclick=()=>{
+    const inp=document.querySelector(`#modal .catNameInput[data-cat="${b.dataset.cat}"]`);
+    renameCategory(b.dataset.cat, inp.value); openCategoryManager();
+  });
+  document.querySelectorAll('#modal .catNameInput').forEach(inp=>inp.onkeydown=e=>{
+    if(e.key==='Enter'){e.preventDefault();renameCategory(inp.dataset.cat, inp.value);openCategoryManager();}
+  });
+  document.querySelectorAll('#modal .catDelBtn').forEach(b=>b.onclick=()=>{
+    const c=findCat(b.dataset.cat); if(!c)return;
+    if(confirm(`カテゴリ「${c.name}」（${c.cards.size}枚）を削除しますか？カード自体は消えません。`)){
+      deleteCategory(c.id); openCategoryManager();
+    }
+  });
+  const nb=document.getElementById('catMgrNewBtn'), ni=document.getElementById('catMgrNew');
+  const mk=()=>{const c=createCategory(ni.value); if(!c){ni.focus();return;} saveFav(); renderCardLibrary(); openCategoryManager();};
+  if(nb)nb.onclick=mk;
+  if(ni)ni.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();mk();}};
+  if(typeof setModalNav==='function')setModalNav(null,null);
+  showModal();
 }
 const BASIC_ENERGY=new Set([1,2,3,4,5,6,7,8]);
 const ACE_SPEC_IDS=new Set([10,12,13,1080,1082,1085,1088,1089,1092,1093,1095,1096,1100,1104,1107,1109,1110,1111,1125,1126,1128,1155,1158,1159,1165,1167,1169,1247,1249]);
@@ -327,15 +363,7 @@ document.querySelectorAll('input[name="deckVis"]').forEach(r=>r.addEventListener
 
 ['cardSearch','cardTypeFilter','energyFilter','flagFilter','sortBy'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
 document.getElementById('favCatFilter').onchange=e=>{FAV_FILTER=e.target.value;renderFavBar();renderCardLibrary();};
-document.getElementById('favCatDeleteBtn').onclick=()=>{
-  const c=findCat(FAV_FILTER);if(!c)return;
-  if(confirm(`カテゴリ「${c.name}」（${c.cards.size}枚）を削除しますか？カード自体は消えません。`))deleteCategory(c.id);
-};
-document.getElementById('favCatRenameBtn').onclick=()=>{
-  const c=findCat(FAV_FILTER);if(!c)return;
-  const name=prompt('新しいカテゴリ名を入力してください。', c.name);
-  if(name!==null)renameCategory(c.id, name);
-};
+document.getElementById('favManageBtn').onclick=openCategoryManager;
 document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/decks';};
 document.getElementById('saveDeckBtn').onclick=saveBuilderDeck;
 
