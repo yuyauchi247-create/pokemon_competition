@@ -175,8 +175,16 @@
   .libCard .cid,.deckLine .cid{position:absolute;top:0;right:0;background:#ffffffd9;font-size:9px;padding:1px 4px;border-bottom-left-radius:5px;font-weight:800;}
   .libCard .nm{font-size:10px;line-height:1.15;padding:3px 4px;min-height:26px;font-weight:700;}.libCard .have{position:absolute;left:0;bottom:0;background:#0b1830d9;color:#fff;font-size:11px;font-weight:800;padding:1px 5px;border-top-right-radius:5px;}.libCard .have.maxed{background:#e0556b;}
   .libCard .favMark{position:absolute;left:0;top:0;font-size:14px;line-height:1;padding:2px 4px;color:#f0b400;text-shadow:0 0 2px #0006,0 1px 1px #0008;border-bottom-right-radius:6px;background:#ffffffb0;pointer-events:none;}
-  #favFilterBtn.active{background:var(--blue);color:#fff;border-color:var(--blue);}
-  #modalFavBtn.on{background:#fff6db;border-color:#f0b400;color:#8a6400;}
+  #favCatFilter{border:1px solid var(--line);border-radius:8px;padding:7px;background:#fff;min-width:200px;}
+  .favBox{border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:12px;background:#fbfdff;}
+  .favBox .favBoxTitle{font-size:12px;font-weight:800;color:var(--ink);margin-bottom:7px;}
+  .favBox .favBoxTitle .hint{font-weight:600;margin-left:6px;}
+  .favChips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+  .favChip{border:1px solid var(--line);border-radius:999px;background:#fff;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;color:var(--ink);}
+  .favChip:hover{border-color:#f0b400;}
+  .favChip.on{background:#fff6db;border-color:#f0b400;color:#8a6400;}
+  .favNewRow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .favNewRow input{flex:1;min-width:160px;border:1px solid var(--line);border-radius:8px;padding:7px;background:#fff;}
   .deckBox{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fbfdff;}
   #deckCount{float:right;color:var(--teal)}#builderMsg{color:#e0556b;font-size:12px;font-weight:700;min-height:18px;margin-bottom:6px;white-space:pre-wrap;}
   .builderDeck{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:8px;max-height:680px;overflow:auto;margin-bottom:10px;padding-right:4px;}

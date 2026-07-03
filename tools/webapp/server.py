@@ -1668,12 +1668,13 @@ def api_card(cid):
 
 @app.route("/api/favorites", methods=["GET", "PUT"])
 def api_favorites():
-    """お気に入りカードID一覧（全利用者で共有・data/favorites に永続）。"""
+    """お気に入りカテゴリ（全利用者で共有・data/favorites に永続）。
+
+    構造: {"categories": [{"id","name","cards":[...]}]}（1枚が複数カテゴリ可）。"""
     if request.method == "GET":
-        return jsonify({"cards": read_favorites()})
+        return jsonify(read_favorites())
     payload = request.get_json(force=True, silent=True) or {}
-    cards = save_favorites(payload.get("cards", []))
-    return jsonify({"cards": cards})
+    return jsonify(save_favorites(payload))
 
 
 @app.route("/card_img/<int:cid>", methods=["GET"])

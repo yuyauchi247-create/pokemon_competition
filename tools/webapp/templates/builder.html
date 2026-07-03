@@ -30,7 +30,10 @@
       <select id="sortBy"><option value="">並び: ID順</option><option value="hp">HP高い順</option><option value="dmg">攻撃力高い順</option><option value="type">タイプ順</option></select>
     </div>
     <div class="favBar" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px">
-      <button type="button" id="favFilterBtn" class="gray">☆ お気に入りのみ</button>
+      <span class="handLabel">⭐ お気に入り</span>
+      <select id="favCatFilter" title="お気に入りカテゴリで絞り込み"><option value="">絞り込みなし</option></select>
+      <button type="button" id="favCatRenameBtn" class="gray" style="display:none">名前変更</button>
+      <button type="button" id="favCatDeleteBtn" class="gray" style="display:none">カテゴリ削除</button>
       <span id="favCount" class="hint"></span>
     </div>
     <div class="deckVisibility" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px">
@@ -62,28 +65,71 @@
 <script>
 let ALL_CARDS=[], CURRENT_DECK=[], EDIT_ID=null;
 // お気に入りカード（サーバ保存・全利用者で共有: data/favorites/favorites.json）
-let FAVORITES=new Set(), FAV_ONLY=false;
+// カテゴリ構造: [{id,name,cards:Set<number>}]。1枚が複数カテゴリに所属できる（タグ型）。
+let FAV_CATS=[], FAV_FILTER='';   // FAV_FILTER: ''=絞り込みなし / '__all'=全お気に入り / カテゴリid
+function findCat(cid){return FAV_CATS.find(c=>c.id===cid);}
+function isFav(id){return FAV_CATS.some(c=>c.cards.has(id));}
+function catsOf(id){return FAV_CATS.filter(c=>c.cards.has(id));}
+function favTotal(){const s=new Set();FAV_CATS.forEach(c=>c.cards.forEach(id=>s.add(id)));return s.size;}
+function inCurrentFilter(id){
+  if(FAV_FILTER==='')return true;
+  if(FAV_FILTER==='__all')return isFav(id);
+  const c=findCat(FAV_FILTER);return c?c.cards.has(id):true;
+}
 async function loadFav(){
-  try{const d=await get('/api/favorites');FAVORITES=new Set((d.cards||[]).map(Number));}
-  catch(e){FAVORITES=new Set();}
-  updateFavBar();
+  try{const d=await get('/api/favorites');
+    FAV_CATS=((d&&d.categories)||[]).map(c=>({id:c.id,name:c.name,cards:new Set((c.cards||[]).map(Number))}));
+  }catch(e){FAV_CATS=[];}
+  renderFavBar();
 }
 async function saveFav(){
+  const body={categories:FAV_CATS.map(c=>({id:c.id,name:c.name,cards:[...c.cards]}))};
   try{
     const r=await fetch('/api/favorites',{method:'PUT',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({cards:[...FAVORITES]})});
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json();
-    if(d&&Array.isArray(d.cards))FAVORITES=new Set(d.cards.map(Number));
+    if(d&&d.categories)
+      FAV_CATS=d.categories.map(c=>({id:c.id,name:c.name,cards:new Set((c.cards||[]).map(Number))}));
   }catch(e){}
-  updateFavBar();
+  renderFavBar();
 }
-function isFav(id){return FAVORITES.has(id);}
-function toggleFav(id){FAVORITES.has(id)?FAVORITES.delete(id):FAVORITES.add(id);updateFavBar();saveFav();}
-function updateFavBar(){
-  const btn=document.getElementById('favFilterBtn');
-  if(btn){btn.textContent=(FAV_ONLY?'★ お気に入りのみ表示中':'☆ お気に入りのみ');btn.classList.toggle('active',FAV_ONLY);}
+function genCatId(){return 'cat_'+Date.now()+'_'+Math.floor(Math.random()*1000);}
+function createCategory(name){
+  name=(name||'').trim();if(!name)return null;
+  let c=FAV_CATS.find(x=>x.name===name);
+  if(!c){c={id:genCatId(),name,cards:new Set()};FAV_CATS.push(c);}
+  return c;
+}
+function toggleCardInCat(id,catId){
+  const c=findCat(catId);if(!c)return;
+  c.cards.has(id)?c.cards.delete(id):c.cards.add(id);
+  renderFavBar();saveFav();
+}
+function deleteCategory(catId){
+  FAV_CATS=FAV_CATS.filter(c=>c.id!==catId);
+  if(FAV_FILTER===catId)FAV_FILTER='';
+  renderFavBar();renderCardLibrary();saveFav();
+}
+function renameCategory(catId,name){
+  const c=findCat(catId);if(!c)return;name=(name||'').trim();if(!name)return;
+  c.name=name;renderFavBar();saveFav();
+}
+function renderFavBar(){
+  const sel=document.getElementById('favCatFilter');
+  if(sel){
+    const cur=FAV_FILTER;
+    sel.innerHTML='<option value="">絞り込みなし</option>'
+      +`<option value="__all">★ すべてのお気に入り（${favTotal()}）</option>`
+      +FAV_CATS.map(c=>`<option value="${c.id}">${c.name}（${c.cards.size}）</option>`).join('');
+    sel.value=FAV_CATS.some(c=>c.id===cur)||cur==='__all'||cur===''?cur:'';
+    if(sel.value!==cur)FAV_FILTER=sel.value;
+  }
+  const isCat=!!findCat(FAV_FILTER);
+  const del=document.getElementById('favCatDeleteBtn'),ren=document.getElementById('favCatRenameBtn');
+  if(del)del.style.display=isCat?'':'none';
+  if(ren)ren.style.display=isCat?'':'none';
   const c=document.getElementById('favCount');
-  if(c)c.textContent=`お気に入り ${FAVORITES.size}枚`;
+  if(c)c.textContent=`カテゴリ${FAV_CATS.length}件 / お気に入り${favTotal()}枚`;
 }
 const BASIC_ENERGY=new Set([1,2,3,4,5,6,7,8]);
 const ACE_SPEC_IDS=new Set([10,12,13,1080,1082,1085,1088,1089,1092,1093,1095,1096,1100,1104,1107,1109,1110,1111,1125,1126,1128,1155,1158,1159,1165,1167,1169,1247,1249]);
@@ -104,7 +150,7 @@ function renderCardLibrary(){
   const fl=document.getElementById('flagFilter').value;
   const sort=document.getElementById('sortBy').value;
   const counts=deckCounts();
-  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q)||(c.effectText||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et)&&(!fl||(c.flags||[]).includes(fl))&&(!FAV_ONLY||FAVORITES.has(c.id)));
+  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q)||(c.effectText||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et)&&(!fl||(c.flags||[]).includes(fl))&&inCurrentFilter(c.id));
   if(sort==='hp')        cards=cards.slice().sort((a,b)=>(b.hp||0)-(a.hp||0)||a.id-b.id);
   else if(sort==='dmg')  cards=cards.slice().sort((a,b)=>(b.maxDamage||0)-(a.maxDamage||0)||a.id-b.id);
   else if(sort==='type') cards=cards.slice().sort((a,b)=>String(a.type||'').localeCompare(String(b.type||''))||a.id-b.id);
@@ -116,7 +162,7 @@ function renderCardLibrary(){
     const stat=c.hp?`<div class="cid">HP${c.hp}${c.maxDamage?` ⚔${c.maxDamage}`:''}</div>`:'';
     const fav=isFav(c.id)?'<div class="favMark">★</div>':'';
     return `<div class="libCard${maxed?' disabled':''}" data-id="${c.id}" title="${c.name} ID:${c.id}">${inner}${fav}<div class="cid">ID:${c.id}</div>${stat}${have}<div class="nm">${c.name}</div></div>`;
-  }).join('')||`<div class="hint">${FAV_ONLY?'お気に入りに登録したカードがありません。カード詳細の「☆ お気に入りに追加」で登録できます。':'該当カードがありません'}</div>`;
+  }).join('')||`<div class="hint">${FAV_FILTER?'このお気に入りカテゴリにカードがありません。カード詳細の「⭐ お気に入り」から登録できます。':'該当カードがありません'}</div>`;
   const libIds=cards.map(c=>c.id);
   document.querySelectorAll('#cardLibrary .libCard').forEach(el=>el.onclick=()=>openBuilderCard(+el.dataset.id,false,libIds));
 }
@@ -160,13 +206,28 @@ async function openBuilderCard(cid, readonly, list){
     <div class="mrow">${stageRow}　${info.join('　')}</div>
     <div class="mrow">デッキ内: ×${cnt}　ID:${cid}</div>
     ${body}
+    <div class="favBox">
+      <div class="favBoxTitle">⭐ お気に入りカテゴリ<span class="hint">（複数選択可）</span></div>
+      <div class="favChips">
+        ${FAV_CATS.map(fc=>`<button type="button" class="favChip${fc.cards.has(cid)?' on':''}" data-cat="${fc.id}">${fc.cards.has(cid)?'★':'☆'} ${fc.name}</button>`).join('')||'<span class="hint">カテゴリがありません。下で作成してください。</span>'}
+      </div>
+      <div class="favNewRow">
+        <input id="favNewCat" type="text" maxlength="40" placeholder="新規カテゴリ名（例: 水軸デッキ）">
+        <button type="button" class="gray" id="favNewBtn">＋作成して追加</button>
+      </div>
+    </div>
     <div class="acts">
       ${editBtns}
-      <button class="gray${isFav(cid)?' on':''}" id="modalFavBtn">${isFav(cid)?'★ お気に入り解除':'☆ お気に入りに追加'}</button>
       <button class="gray" onclick="closeModal()">閉じる</button>
     </div>`;
-  const favBtn=document.getElementById('modalFavBtn');
-  if(favBtn) favBtn.onclick=()=>{toggleFav(cid);openBuilderCard(cid, readonly, list);renderCardLibrary();};
+  document.querySelectorAll('#modal .favChip').forEach(el=>el.onclick=()=>{
+    toggleCardInCat(cid, el.dataset.cat); openBuilderCard(cid, readonly, list); renderCardLibrary();
+  });
+  const newBtn=document.getElementById('favNewBtn'), newInp=document.getElementById('favNewCat');
+  const doNew=()=>{const c=createCategory(newInp.value); if(!c){newInp.focus();return;}
+    c.cards.add(cid); saveFav(); openBuilderCard(cid, readonly, list); renderCardLibrary();};
+  if(newBtn) newBtn.onclick=doNew;
+  if(newInp) newInp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();doNew();}};
   const inc=document.getElementById('modalIncBtn');
   if(inc&&!addDisabled) inc.onclick=()=>{addCard(cid);openBuilderCard(cid, readonly, list);};
   const dec=document.getElementById('modalDecBtn');
@@ -265,7 +326,16 @@ function togglePwInput(){
 document.querySelectorAll('input[name="deckVis"]').forEach(r=>r.addEventListener('change',togglePwInput));
 
 ['cardSearch','cardTypeFilter','energyFilter','flagFilter','sortBy'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
-document.getElementById('favFilterBtn').onclick=()=>{FAV_ONLY=!FAV_ONLY;updateFavBar();renderCardLibrary();};
+document.getElementById('favCatFilter').onchange=e=>{FAV_FILTER=e.target.value;renderFavBar();renderCardLibrary();};
+document.getElementById('favCatDeleteBtn').onclick=()=>{
+  const c=findCat(FAV_FILTER);if(!c)return;
+  if(confirm(`カテゴリ「${c.name}」（${c.cards.size}枚）を削除しますか？カード自体は消えません。`))deleteCategory(c.id);
+};
+document.getElementById('favCatRenameBtn').onclick=()=>{
+  const c=findCat(FAV_FILTER);if(!c)return;
+  const name=prompt('新しいカテゴリ名を入力してください。', c.name);
+  if(name!==null)renameCategory(c.id, name);
+};
 document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/decks';};
 document.getElementById('saveDeckBtn').onclick=saveBuilderDeck;
 
