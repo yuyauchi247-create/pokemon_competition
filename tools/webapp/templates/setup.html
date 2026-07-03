@@ -47,11 +47,18 @@
   /* 登録AIをタイルで選ぶ（デッキ一覧と同じ見た目）。数が多いのでスクロール枠に収める。 */
   .agentTiles{max-height:360px;overflow:auto;margin-left:24px;padding:4px 4px 2px;
     border:1px solid var(--line);border-radius:12px;background:#fbfdff;}
+  /* 人 vs AI: 自分と相手のデッキ選択を横並び2カラムに（PC）。縦スクロールせず並べて選べる。 */
+  .setup-human{max-width:1180px;}
+  .setup-human .setupForm{max-width:none;}
+  .dualCols{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+  .dualCols .choice{margin:0;}
+  /* 狭い画面（タブレット縦・スマホ）では従来どおり縦積み */
+  @media(max-width:760px){.dualCols{grid-template-columns:1fr;}}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="page">
+<div class="page setup-{{ mode }}">
   <div class="crumb"><a href="/">ホーム</a> › <a href="/play">対戦</a> › {{ titles[mode] }}</div>
   <h2 class="pageTitle">{{ titles[mode] }}</h2>
 
@@ -147,6 +154,7 @@
     </div>
     <p class="pageLead">「部屋を作成」すると<strong>招待URL</strong>が発行されます。相手がそのURLから参加すると対戦が始まります。</p>
     {% else %}
+    <div class="dualCols">
     <div class="choice">
       <h3>あなたのデッキ</h3>
       <div class="deckRow">
@@ -187,6 +195,7 @@
         <input type="hidden" name="opponent_deck_agent_id" id="oDeckAgentId">
         <input type="hidden" name="opponent_deck_password" id="oppDeckPasswordField">
       </div>
+    </div>
     </div>
     {% endif %}
 

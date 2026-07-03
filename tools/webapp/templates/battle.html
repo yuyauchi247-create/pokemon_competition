@@ -480,7 +480,10 @@ function renderAsk(){
   if(!s){ask.innerHTML=STATE.running?'<div class="hint">AIが考えています…</div>':'';hideP();return;}
   const single=(s.minCount===1&&s.maxCount===1);
   const m=classify();
-  const btnOpts=m.panel;            // カード以外の選択肢だけ（ボタン表示。カードのタイルは出さない）
+  const btnOpts=m.panel.slice();    // カード以外の選択肢だけ（ボタン表示。カードのタイルは出さない）
+  // こうまんしれい等「別のポケモンが持つワザを選んで使う」(context 35=使うワザを選んでください)は、
+  // 自分のアクティブのワザではないためカード詳細から辿れない。ここにワザ一覧ボタンとして出す。
+  if(s.context===35) m.attack.forEach(o=>btnOpts.push(o));
   picks=[];
   if(single && btnOpts.length===0){ // 手札/場のカードだけ選ぶ → 箱は出さず、手札上にメッセージ＋光るカード
     ask.innerHTML=''; ask.style.display='none';
@@ -495,6 +498,12 @@ function renderAsk(){
   const opts=document.getElementById('opts');
   const pick=(o)=>{ if(single)submit([o.index]); else chooseCard(o.index); };
   if(opts)btnOpts.forEach(o=>{
+    if(o.optionType==='ATTACK'){                      // 使うワザ(context35): ワザ名＋元ポケモンを表示、選んだら即使用
+      const el=document.createElement('div'); el.className='opt';
+      el.textContent=o.label||('ワザ '+o.index);
+      el.onclick=()=>submit([o.index]);
+      opts.appendChild(el); return;
+    }
     const faceDown=(o.area===PRIZE);                 // サイドは中身を見せない＝裏面
     const hasImg=!faceDown && o.card && o.card.img;  // 中身が見えるカード選択肢＝表面画像
     if(faceDown || hasImg){
