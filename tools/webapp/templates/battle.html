@@ -312,10 +312,14 @@ function classify(){
       if(ot==='PLAY')m.playHand.add(o.srcIndex);
     } else if(ot==='CARD'){
       if(o.area===HAND)(m.hand[o.srcIndex]=m.hand[o.srcIndex]||[]).push(o);
-      else if(o.area===ACTIVE||o.area===BENCH)(m.board[o.area+':'+o.srcIndex]=m.board[o.area+':'+o.srcIndex]||[]).push(o);
+      else if(o.area===ACTIVE||o.area===BENCH){
+        const side=o.side||'you';   // you=自分盤面 / opp=相手盤面（相手ベンチ対象攻撃など）
+        const k=side+':'+o.area+':'+o.srcIndex;
+        (m.board[k]=m.board[k]||[]).push(o);
+      }
       else m.panel.push(o);
     } else if(ot==='ATTACK'){ m.attack.push(o); }
-    else if(ot==='RETREAT'||ot==='ABILITY'){ (m.board[ACTIVE+':0']=m.board[ACTIVE+':0']||[]).push(o); }
+    else if(ot==='RETREAT'||ot==='ABILITY'){ (m.board['you:'+ACTIVE+':0']=m.board['you:'+ACTIVE+':0']||[]).push(o); }
     else m.panel.push(o);
   });
   return m;
@@ -339,9 +343,9 @@ function handActions(H){
   });
   return out;
 }
-function boardActions(area,pos){
+function boardActions(side,area,pos){
   const out=[];
-  (classify().board[area+':'+pos]||[]).forEach(o=>{
+  (classify().board[side+':'+area+':'+pos]||[]).forEach(o=>{
     let lbl = o.optionType==='RETREAT'?'にげる（入れ替え）' : (o.optionType==='ABILITY'?o.label:'このポケモンを選ぶ');
     out.push({label:lbl,index:o.index});
   });
@@ -355,12 +359,12 @@ function attackOptionMap(){
 }
 
 /* ---------- カードタイル ---------- */
-function tile(c,{active=false,hp=null,maxHp=null,energy=null,energyTypes=null,area=null,pos=null,hand=null,drag=false,glow=false,sel=false}={}){
+function tile(c,{active=false,hp=null,maxHp=null,energy=null,energyTypes=null,area=null,pos=null,side=null,hand=null,drag=false,glow=false,sel=false}={}){
   if(!c)return `<div class="empty-c">なし</div>`;
   const t=c.type||'COLORLESS';
   const gc=(glow?' glow':'')+(sel?' selpick':'');
   const attrs=[`data-cid="${c.id}"`];
-  if(area!=null)attrs.push(`data-area="${area}"`,`data-pos="${pos}"`);
+  if(area!=null)attrs.push(`data-area="${area}"`,`data-pos="${pos}"`,`data-side="${side||'you'}"`);
   if(hand!=null)attrs.push(`data-hand="${hand}"`);
   if(drag)attrs.push('draggable="true"');
   let ov='';
@@ -382,9 +386,10 @@ function tile(c,{active=false,hp=null,maxHp=null,energy=null,energyTypes=null,ar
      <div class="bar c-${t}"></div>
      <div class="bd"><div class="nm">${c.name}</div><div class="art a-${t}">${ICON[t]||'⭐'}</div>${hpln}${ene}</div></div>`;
 }
-function benchHtml(bench,interactive,glowSet,pickSet){
+function benchHtml(bench,interactive,glowSet,pickSet,side='you'){
+  const key=i=>side+':'+BENCH+':'+i;
   const slots=(bench||[]).map((b,i)=> b
-    ? tile(b,{hp:b.hp,maxHp:b.maxHp,energy:b.energy,energyTypes:b.energyTypes,area:interactive?BENCH:null,pos:interactive?i:null,glow:!!(glowSet&&glowSet.has(BENCH+':'+i)),sel:!!(pickSet&&pickSet.has(BENCH+':'+i))})
+    ? tile(b,{hp:b.hp,maxHp:b.maxHp,energy:b.energy,energyTypes:b.energyTypes,area:interactive?BENCH:null,pos:interactive?i:null,side:side,glow:!!(glowSet&&glowSet.has(key(i))),sel:!!(pickSet&&pickSet.has(key(i)))})
     : '<div class="empty-c">－</div>');
   if(!slots.length) slots.push('<div class="empty-c">ベンチなし</div>');
   return slots.join('');
@@ -427,10 +432,14 @@ function renderBoard(){
   const boardGlow=new Set(Object.keys(cm.board));
   const gOn=!!sel;   // 選択中はいつでも対象カードを光らせる
   const bPick=new Set(Object.keys(cm.board).filter(k=>(cm.board[k]||[]).some(o=>picks.includes(o.index))));
-  document.getElementById('oppActive').innerHTML=tile(oa,{active:true,hp:oa?.hp,maxHp:oa?.maxHp,energy:oa?.energy,energyTypes:oa?.energyTypes});
-  document.getElementById('youActive').innerHTML=tile(ya,{active:true,hp:ya?.hp,maxHp:ya?.maxHp,energy:ya?.energy,energyTypes:ya?.energyTypes,area:ACTIVE,pos:0,glow:gOn&&boardGlow.has(ACTIVE+':0'),sel:bPick.has(ACTIVE+':0')});
-  document.getElementById('oppBench').innerHTML=benchHtml(b.opp.bench,false);
-  document.getElementById('youBench').innerHTML=benchHtml(b.you.bench,true,gOn?boardGlow:null,bPick);
+  // 相手盤面も対象になり得る（例: メガスターミー ジェットブローの相手ベンチ選択）。
+  // opp:* のキーがあるときだけ相手アクティブ/ベンチを選択可能にする。
+  const oppActInteractive=boardGlow.has('opp:'+ACTIVE+':0');
+  document.getElementById('oppActive').innerHTML=tile(oa,{active:true,hp:oa?.hp,maxHp:oa?.maxHp,energy:oa?.energy,energyTypes:oa?.energyTypes,area:oppActInteractive?ACTIVE:null,pos:0,side:'opp',glow:gOn&&oppActInteractive,sel:bPick.has('opp:'+ACTIVE+':0')});
+  document.getElementById('youActive').innerHTML=tile(ya,{active:true,hp:ya?.hp,maxHp:ya?.maxHp,energy:ya?.energy,energyTypes:ya?.energyTypes,area:ACTIVE,pos:0,side:'you',glow:gOn&&boardGlow.has('you:'+ACTIVE+':0'),sel:bPick.has('you:'+ACTIVE+':0')});
+  const oppBenchInteractive=[...boardGlow].some(k=>k.startsWith('opp:'+BENCH+':'));
+  document.getElementById('oppBench').innerHTML=benchHtml(b.opp.bench,oppBenchInteractive,gOn?boardGlow:null,bPick,'opp');
+  document.getElementById('youBench').innerHTML=benchHtml(b.you.bench,true,gOn?boardGlow:null,bPick,'you');
   document.getElementById('oppSide').innerHTML=sideHtml(b.opp);
   document.getElementById('youSide').innerHTML=sideHtml(b.you);
   document.getElementById('oppPiles').innerHTML=pilesHtml(b.opp,'opp');
@@ -620,9 +629,12 @@ function bindClicks(){
   bindGroup('#youHand .pcard[data-cid]',
     el=>handActions(+el.dataset.hand).map(a=>({label:a.label,onclick:()=>chooseCard(a.index)})));
   bindGroup('#youActive .pcard[data-cid],#youBench .pcard[data-cid]',
-    el=>boardActions(+el.dataset.area,+el.dataset.pos).map(a=>({label:a.label,onclick:()=>chooseCard(a.index)})));
+    el=>boardActions(el.dataset.side||'you',+el.dataset.area,+el.dataset.pos).map(a=>({label:a.label,onclick:()=>chooseCard(a.index)})));
+  // 相手盤面: data-area が付いている（＝対象になっている）タイルだけ選択アクションを出す。
   bindGroup('#oppActive .pcard[data-cid],#oppBench .pcard[data-cid],#oppHand .pcard[data-cid]',
-    ()=>[]);
+    el=>el.dataset.area!=null
+      ? boardActions(el.dataset.side||'opp',+el.dataset.area,+el.dataset.pos).map(a=>({label:a.label,onclick:()=>chooseCard(a.index)}))
+      : []);
   document.querySelectorAll('.pile[data-who]').forEach(b=>b.onclick=()=>showDiscard(b.dataset.who));
 }
 function showDiscard(who){

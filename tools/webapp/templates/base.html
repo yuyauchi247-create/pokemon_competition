@@ -98,7 +98,7 @@
   #overlay{position:fixed;inset:0;background:#1f2a3a55;backdrop-filter:blur(2px);display:none;
            align-items:center;justify-content:center;z-index:20;}
   #modal{background:#fff;border:1px solid var(--line);border-radius:16px;max-width:460px;width:92%;
-         padding:18px;box-shadow:0 20px 50px #0b346b33;}
+         padding:18px;box-shadow:0 20px 50px #0b346b33;max-height:90vh;overflow-y:auto;}
   #modal .mtype{display:inline-block;font-size:12px;padding:3px 10px;border-radius:12px;color:#10131f;font-weight:800;}
   #modal h3{margin:8px 0;font-size:19px;}
   #modal .cardimg{display:block;width:230px;max-width:70%;margin:8px auto;border-radius:10px;box-shadow:0 4px 14px #0b346b33;}
@@ -189,6 +189,7 @@
   .catRow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
   .catRow .catNameInput,.catNewRow input{flex:1;min-width:150px;border:1px solid var(--line);border-radius:8px;padding:7px;background:#fff;}
   .catNewRow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-top:1px dashed var(--line);padding-top:10px;margin-top:2px;}
+  .draftBanner{background:#fff6db;border:1px solid #f0c040;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12px;font-weight:700;color:#8a6400;display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
   .deckBox{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fbfdff;}
   #deckCount{float:right;color:var(--teal)}#builderMsg{color:#e0556b;font-size:12px;font-weight:700;min-height:18px;margin-bottom:6px;white-space:pre-wrap;}
   .builderDeck{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:8px;max-height:680px;overflow:auto;margin-bottom:10px;padding-right:4px;}
