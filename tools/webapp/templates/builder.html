@@ -2,7 +2,7 @@
 {% block title %}デッキ作成 | ポケカ 人 vs AI{% endblock %}
 
 {% block nav %}
-<button type="button" class="gray" onclick="location.href='/decks'">デッキ一覧へ戻る</button>
+<button type="button" class="gray" onclick="guardedNav('/decks')">デッキ一覧へ戻る</button>
 {% endblock %}
 
 {% block content %}
@@ -53,7 +53,12 @@
       <div id="testHand" class="testHand"></div>
     </div>
     <div class="builderGrid">
-      <div class="deckBox"><h3>作成中デッキ <span id="deckCount">0/60</span></h3><div id="builderMsg"></div><div id="builderDeck" class="builderDeck"></div><button type="button" id="saveDeckBtn">このデッキを保存</button></div>
+      <div class="deckBox"><h3>作成中デッキ <span id="deckCount">0/60</span></h3><div id="builderMsg"></div><div id="draftBanner" class="draftBanner" style="display:none"></div><div id="builderDeck" class="builderDeck"></div>
+        <div class="deckSaveBtns" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+          <button type="button" id="saveDeckBtn">このデッキを保存</button>
+          <button type="button" id="tempSaveBtn" class="gray" title="枚数が60枚に満たなくても下書きとして一時保存します（このブラウザに保存）">一時保存（下書き）</button>
+        </div>
+      </div>
       <div class="library"><h3>カード一覧</h3><div id="cardLibrary" class="cardLibrary"></div></div>
     </div>
   </div>
@@ -283,11 +288,11 @@ function addCard(id){
   if(!BASIC_ENERGY.has(id)&&cnt>=4){builderMessage('同じカードは基本エネルギー以外4枚までです。');return;}
   if(ACE_SPEC_IDS.has(id)&&deckHasAceSpec()&&cnt===0){builderMessage('ACE SPECはデッキに1枚までです。すでに別のACE SPECが入っています。');return;}
   if(ACE_SPEC_IDS.has(id)&&cnt>=1){builderMessage('ACE SPECはデッキに1枚までです。');return;}
-  CURRENT_DECK.push(id);builderMessage('');renderBuilderDeck();renderCardLibrary();
+  CURRENT_DECK.push(id);builderMessage('');markDirty();renderBuilderDeck();renderCardLibrary();
 }
 function removeCard(id){
   const i=CURRENT_DECK.indexOf(id);if(i>=0)CURRENT_DECK.splice(i,1);
-  renderBuilderDeck();renderCardLibrary();
+  markDirty();renderBuilderDeck();renderCardLibrary();
 }
 function deckHasBasic(){
   // たねポケモン（stage に「たね」を含む）が1枚でもあるか
@@ -328,6 +333,7 @@ async function saveBuilderDeck(){
     r=await post('/api/user_decks',body);
   }
   if(r.error){builderMessage(r.error);return;}
+  clearDirty(); discardDraft();   // 保存できたので未保存フラグと下書きを消す
   location.href='/decks';   // 保存/更新したら一覧へ
 }
 
@@ -359,12 +365,57 @@ async function maybeLoadEdit(){
 function togglePwInput(){
   document.getElementById('deckPassword').style.display = deckVisibility()==='private'?'':'none';
 }
-document.querySelectorAll('input[name="deckVis"]').forEach(r=>r.addEventListener('change',togglePwInput));
+document.querySelectorAll('input[name="deckVis"]').forEach(r=>r.addEventListener('change',()=>{togglePwInput();markDirty();}));
+
+// ===== 一時保存（下書き）＆未保存ガード =====
+let DIRTY=false;
+function markDirty(){DIRTY=true;}
+function clearDirty(){DIRTY=false;}
+function draftKey(){return 'pokeca_deck_draft:'+(EDIT_ID||'new');}
+function discardDraft(){try{localStorage.removeItem(draftKey());}catch(e){}}
+function tempSaveDraft(){
+  try{
+    const d={name:document.getElementById('deckNameInput').value,cards:CURRENT_DECK.slice(),
+             visibility:deckVisibility(),editId:EDIT_ID||null,ts:Date.now()};
+    localStorage.setItem(draftKey(),JSON.stringify(d));
+    clearDirty();
+    builderMessage(`📝 下書きを一時保存しました（${CURRENT_DECK.length}枚）。このブラウザに保存され、次回この画面で復元できます。`);
+  }catch(e){builderMessage('一時保存に失敗しました（ブラウザの保存容量をご確認ください）。');}
+}
+function loadDraftBanner(){
+  let raw; try{raw=localStorage.getItem(draftKey());}catch(e){return;}
+  if(!raw)return;
+  let d; try{d=JSON.parse(raw);}catch(e){return;}
+  if(!d||!Array.isArray(d.cards))return;
+  const when=d.ts?new Date(d.ts).toLocaleString():'';
+  const el=document.getElementById('draftBanner');
+  el.style.display='';
+  el.innerHTML=`📝 一時保存した下書きがあります（${d.cards.length}枚 / ${when}） `
+    +`<button type="button" id="draftRestore" class="gray">復元</button> `
+    +`<button type="button" id="draftDiscard" class="gray">破棄</button>`;
+  document.getElementById('draftRestore').onclick=()=>{
+    CURRENT_DECK=(d.cards||[]).map(Number);
+    document.getElementById('deckNameInput').value=d.name||'';
+    if(d.visibility==='private'){const r=document.querySelector('input[name="deckVis"][value="private"]');if(r){r.checked=true;togglePwInput();}}
+    el.style.display='none'; markDirty();
+    renderBuilderDeck();renderCardLibrary();
+    builderMessage(`下書きを復元しました（${CURRENT_DECK.length}枚）。`);
+  };
+  document.getElementById('draftDiscard').onclick=()=>{discardDraft();el.style.display='none';};
+}
+function guardedNav(url){
+  if(DIRTY && !confirm('デッキがまだ保存されていません。保存せずにこのページを離れますか？\n（「一時保存（下書き）」で下書き保存できます）'))return;
+  clearDirty(); location.href=url;
+}
+// タブを閉じる/リロード/URL変更などのハード遷移はブラウザ標準の確認を出す
+window.addEventListener('beforeunload',e=>{ if(DIRTY){e.preventDefault();e.returnValue='';} });
 
 ['cardSearch','cardTypeFilter','energyFilter','flagFilter','sortBy'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
+document.getElementById('deckNameInput').addEventListener('input',markDirty);
 document.getElementById('favCatFilter').onchange=e=>{FAV_FILTER=e.target.value;renderFavBar();renderCardLibrary();};
 document.getElementById('favManageBtn').onclick=openCategoryManager;
-document.getElementById('closeBuilderBtn').onclick=()=>{location.href='/decks';};
+document.getElementById('closeBuilderBtn').onclick=()=>guardedNav('/decks');
+document.getElementById('tempSaveBtn').onclick=tempSaveDraft;
 document.getElementById('saveDeckBtn').onclick=saveBuilderDeck;
 
 // ===== 手札テスト（初手5枚／+1ドロー） =====
@@ -424,14 +475,14 @@ document.getElementById('deckCsvFile').onchange=async e=>{
   CURRENT_DECK=(r.cards||[]).map(Number);
   const nameInput=document.getElementById('deckNameInput');
   if(!nameInput.value.trim()) nameInput.value=f.name.replace(/\.csv$/i,'');
-  renderBuilderDeck(); renderCardLibrary();
+  markDirty(); renderBuilderDeck(); renderCardLibrary();
   builderMessage(`CSVから ${CURRENT_DECK.length} 枚を読み込みました。内容を確認して「このデッキを保存」で登録してください。`);
   e.target.value='';
 };
 
 loadFav().then(()=>{if(ALL_CARDS.length)renderCardLibrary();});
 document.getElementById('cardLibrary').innerHTML='<div class="hint">カード一覧を読み込み中…</div>';
-get('/api/cards').then(d=>{ALL_CARDS=d.cards||[];renderCardLibrary();maybeLoadEdit();});
+get('/api/cards').then(async d=>{ALL_CARDS=d.cards||[];renderCardLibrary();await maybeLoadEdit();loadDraftBanner();});
 renderBuilderDeck();
 </script>
 {% endblock %}

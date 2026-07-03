@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+{% block title %}お試し（サンドボックス）{% endblock %}
+
+{% block head %}
+<style>
+  .sbwrap{max-width:1180px;margin:0 auto;padding:12px}
+  .sbsetup{max-width:720px;margin:20px auto;display:flex;flex-direction:column;gap:14px}
+  .sbrow{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .sbrow label{min-width:120px;color:var(--sub);font-size:14px}
+  .sbrow select,.sbrow input{flex:1;min-width:160px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}
+  .sbnote{color:var(--sub);font-size:13px;line-height:1.6}
+  .sbmain{display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start}
+  @media(max-width:900px){.sbmain{grid-template-columns:1fr}}
+  .sbcol{display:flex;flex-direction:column;gap:12px}
+  .sbside{border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--panel)}
+  .sbside.active-turn{border-color:var(--teal);box-shadow:0 0 0 2px rgba(0,150,150,.18)}
+  .sbside h3{margin:0 0 6px;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+  .sbrowcards{display:flex;gap:6px;flex-wrap:wrap;min-height:70px;align-items:flex-start}
+  .sbrowcards .pcard,.sbrowcards .pcard.imgcard{width:74px;height:auto}
+  .sbrowcards .pcard.sbmini,.sbrowcards .pcard.sbmini.imgcard{width:56px}
+  .sbrowcards .pcard .art{height:38px}
+  .sbrowcards .empty-c{width:56px;height:78px}
+  .sbcounts{color:var(--sub);font-size:12px;margin-top:6px}
+  .sbcond{color:#e0556b;font-size:12px;font-weight:700}
+  .sbhandlbl{color:var(--sub);font-size:12px;margin:6px 0 2px}
+  .sbmini{width:64px}
+  .sbopts{border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--panel)}
+  .sbopts h3{margin:0 0 8px;font-size:15px}
+  .optlist{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow:auto}
+  .optitem{display:flex;gap:8px;align-items:center;padding:7px 9px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--bg)}
+  .optitem:hover{border-color:var(--teal)}
+  .optitem.selp{border-color:var(--teal);background:rgba(0,150,150,.12)}
+  .optitem .oimg{width:32px;height:44px;object-fit:cover;border-radius:4px;flex:none}
+  .optitem .otxt{font-size:13px;line-height:1.35}
+  .optitem .oside{margin-left:auto;font-size:11px;color:var(--sub);flex:none}
+  .sbbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .sbbtn{padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer;font-size:13px}
+  .sbbtn.primary{background:var(--teal);color:#fff;border-color:var(--teal)}
+  .sbbtn.warn{background:#c8465a;color:#fff;border-color:#c8465a}
+  .sbbtn:disabled{opacity:.5;cursor:not-allowed}
+  .sbtag{font-size:12px;padding:3px 8px;border-radius:999px;background:var(--soft);color:var(--sub)}
+  .sblog{border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--panel);max-height:260px;overflow:auto}
+  .sblog h3{margin:0 0 6px;font-size:14px}
+  .sblog .l{font-size:12px;line-height:1.6;border-bottom:1px dashed var(--line);padding:2px 0}
+  .sbtree{border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--panel)}
+  .sbtree h3{margin:0 0 6px;font-size:14px}
+  .tnode{padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px;line-height:1.4;border:1px solid transparent}
+  .tnode:hover{background:var(--soft)}
+  .tnode.cur{background:rgba(0,150,150,.14);border-color:var(--teal)}
+  .tnode .tmv{color:var(--sub)}
+  .whatif-on .sbside{opacity:.55}
+  .whatif-badge{display:none;color:#fff;background:#7a4bd0;padding:3px 9px;border-radius:999px;font-size:12px}
+  .whatif-on .whatif-badge{display:inline-block}
+  .hidden{display:none!important}
+  .empty-c{width:64px;height:88px;border:1px dashed var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:11px}
+  .pcard{position:relative}
+</style>
+{% endblock %}
+
+{% block nav %}<a class="sbtag" href="/play">対戦メニュー</a>{% endblock %}
+
+{% block content %}
+<main class="sbwrap">
+  <div id="banner"></div>
+
+  <!-- 設定パネル -->
+  <section id="setup" class="sbsetup">
+    <h2>お試し（サンドボックス）</h2>
+    <p class="sbnote">
+      自分と相手の両方を手動で操作して狙った局面を作り、そこから <b>What-if 試行</b>
+      （手を試す → 効果ログを確認 → 任意のノードへ巻き戻す）ができます。<br>
+      ※シミュレータの制約で盤面の直接注入はできないため、手を打って局面を作ります。
+      巻き戻し・別手の試行は探索（What-if）側で行い、本物の盤面には反映しません。
+    </p>
+    <div class="sbrow"><label>自分のデッキ</label><select id="myDeck"></select></div>
+    <div class="sbrow"><label>相手のデッキ</label><select id="oppDeck"></select></div>
+    <div class="sbrow">
+      <button class="sbbtn primary" id="startBtn">この設定で開始</button>
+      <span class="sbnote" id="setupMsg"></span>
+    </div>
+  </section>
+
+  <!-- 対戦本体 -->
+  <section id="game" class="hidden">
+    <div class="sbbar">
+      <span class="sbtag" id="turnTag">—</span>
+      <span class="whatif-badge">🧪 What-if 試行中（本物の盤面は進みません）</span>
+      <span style="flex:1"></span>
+      <label class="sbnote">相手:
+        <select id="oppMode">
+          <option value="manual">手動（自分で操作）</option>
+          <option value="rule">ルールベースAI</option>
+          <option value="agent">登録AI…</option>
+        </select>
+      </label>
+      <select id="oppAgent" class="hidden"></select>
+    </div>
+
+    <div class="sbmain" id="mainGrid">
+      <div class="sbcol">
+        <div class="sbside" id="oppBox">
+          <h3><span>相手（プレイヤー2）</span><span class="sbcond" id="oppCond"></span></h3>
+          <div class="sbhandlbl">バトル場 / ベンチ</div>
+          <div class="sbrowcards" id="oppField"></div>
+          <div class="sbhandlbl">手札</div>
+          <div class="sbrowcards" id="oppHand"></div>
+          <div class="sbcounts" id="oppCounts"></div>
+        </div>
+        <div class="sbside" id="youBox">
+          <h3><span>自分（プレイヤー1）</span><span class="sbcond" id="youCond"></span></h3>
+          <div class="sbhandlbl">バトル場 / ベンチ</div>
+          <div class="sbrowcards" id="youField"></div>
+          <div class="sbhandlbl">手札</div>
+          <div class="sbrowcards" id="youHand"></div>
+          <div class="sbcounts" id="youCounts"></div>
+        </div>
+      </div>
+
+      <div class="sbcol">
+        <div class="sbopts">
+          <h3>手番の行動</h3>
+          <div class="optlist" id="optList"></div>
+          <div id="optConfirm" class="hidden" style="margin-top:8px">
+            <button class="sbbtn primary" id="confirmBtn">決定 (0)</button>
+          </div>
+        </div>
+
+        <div class="sbtree" id="whatifPanel">
+          <h3>What-if 試行</h3>
+          <div class="sbbar" style="margin:0 0 8px">
+            <button class="sbbtn primary" id="wiBegin">試行を開始</button>
+            <button class="sbbtn warn hidden" id="wiEnd">試行を終了</button>
+            <label class="sbnote"><input type="checkbox" id="wiCoin"> コイン表を固定</label>
+          </div>
+          <div id="treeBox" class="hidden">
+            <div class="sbhandlbl">分岐ツリー（クリックで巻き戻し）</div>
+            <div id="tree"></div>
+          </div>
+        </div>
+
+        <div class="sblog">
+          <h3>ログ</h3>
+          <div id="log"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+{% endblock %}
+
+{% block script %}
+<script>
+const ENE_ICON={GRASS:'🍃',FIRE:'🔥',WATER:'💧',LIGHTNING:'⚡',PSYCHIC:'🔮',FIGHTING:'👊',DARKNESS:'🌙',METAL:'⚙️',DRAGON:'🐉',COLORLESS:'⭐',RAINBOW:'🌈',TEAM_ROCKET:'🚀'};
+const CTX={0:'行動を選んでください',1:'バトル場に出すたねポケモンを選んでください',2:'ベンチに出すポケモンを選べます（任意）',3:'入れ替えるポケモンを選んでください',35:'使うワザを選んでください',41:'先攻にしますか？',42:'手札を引き直しますか？',43:'効果を使いますか？',46:'コインの表を選びますか？'};
+
+let GID=null;            // ライブ対戦の gid
+let uiMode='live';       // 'live' | 'search'
+let VIEW=null;           // 現在描画しているビュー（live=state_json / search=node）
+let curSearchId=null;    // 探索中の現ノード
+let pending=[];          // 複数選択の一時保持
+
+/* ---------- カードタイル（簡易版） ---------- */
+function eneIcons(types,energy){
+  if(Array.isArray(types)&&types.length)
+    return types.map(e=>`<span title="${e.type} ×${e.count}">${(ENE_ICON[e.type]||'⭐').repeat(e.count)}</span>`).join('');
+  return '●'.repeat(energy||0);
+}
+function tile(c,{active=false,mini=false}={}){
+  if(!c)return `<div class="empty-c">なし</div>`;
+  const t=c.type||'COLORLESS';
+  const cls='pcard'+(active?' active':'')+(mini?' sbmini':'');
+  let ov='';
+  if(c.hp!=null&&c.maxHp!=null){
+    const p=Math.max(0,Math.round(100*c.hp/c.maxHp));
+    ov=`<div class="ov"><div class="ovln"><span>HP ${c.hp}/${c.maxHp}</span><span class="ovene">${eneIcons(c.energyTypes,c.energy)}</span></div><div class="hpbar"><i style="width:${p}%"></i></div></div>`;
+  }
+  const click=`onclick="showCardDetail(${c.id})"`;
+  if(c.img)
+    return `<div class="${cls} imgcard" ${click} data-cid="${c.id}"><img class="full" src="${c.img}" loading="lazy" alt="${c.name}" draggable="false">${ov}</div>`;
+  let hpln=(c.hp!=null&&c.maxHp!=null)?`<div class="ln"><span>HP</span><span>${c.hp}/${c.maxHp}</span></div>`:(c.hp?`<div class="ln"><span>HP</span><span>${c.hp}</span></div>`:'');
+  const ene=(c.energy!=null)?`<div class="ene">${eneIcons(c.energyTypes,c.energy)||'　'}</div>`:'';
+  return `<div class="${cls}" ${click} data-cid="${c.id}"><div class="bar c-${t}"></div><div class="bd"><div class="nm">${c.name}</div><div class="art a-${t}">${ICON[t]||'⭐'}</div>${hpln}${ene}</div></div>`;
+}
+function fieldHtml(sideObj){
+  if(!sideObj)return '<span class="sbnote">なし</span>';
+  const act=tile(sideObj.active,{active:true});
+  const bench=(sideObj.bench||[]).map(b=>tile(b)).join('')||'<span class="sbnote">ベンチなし</span>';
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap"><div>${act}</div><div style="width:1px;background:var(--line)"></div>${bench}</div>`;
+}
+function handHtml(sideObj){
+  const h=sideObj&&sideObj.hand;
+  if(!Array.isArray(h))return `<span class="sbnote">非公開（${sideObj?sideObj.handCount:0}枚）</span>`;
+  return h.map(c=>tile(c,{mini:true})).join('')||'<span class="sbnote">なし</span>';
+}
+function countsHtml(s){
+  if(!s)return '';
+  return `山札 ${s.deck}　手札 ${s.handCount}　サイド ${s.prize}　トラッシュ ${s.discard}`;
+}
+
+/* ---------- 盤面描画 ---------- */
+function renderBoard(view){
+  const b=view.board;
+  document.getElementById('game').classList.toggle('whatif-on', uiMode==='search');
+  if(!b){return;}
+  document.getElementById('oppField').innerHTML=fieldHtml(b.opp);
+  document.getElementById('youField').innerHTML=fieldHtml(b.you);
+  document.getElementById('oppHand').innerHTML=handHtml(b.opp);
+  document.getElementById('youHand').innerHTML=handHtml(b.you);
+  document.getElementById('oppCounts').innerHTML=countsHtml(b.opp);
+  document.getElementById('youCounts').innerHTML=countsHtml(b.you);
+  document.getElementById('oppCond').textContent=(b.opp&&b.opp.conditions||[]).join(' ');
+  document.getElementById('youCond').textContent=(b.you&&b.you.conditions||[]).join(' ');
+  const mover=view.mover;
+  document.getElementById('youBox').classList.toggle('active-turn', mover===0);
+  document.getElementById('oppBox').classList.toggle('active-turn', mover===1);
+  let tag;
+  if(view.result!==-1&&view.result!=null) tag='決着: '+(view.result===0?'プレイヤー1の勝ち':view.result===1?'プレイヤー2の勝ち':'引き分け');
+  else if(mover===0) tag='手番: 自分（プレイヤー1）'+(uiMode==='search'?'〔試行〕':'');
+  else if(mover===1) tag='手番: 相手（プレイヤー2）'+(uiMode==='search'?'〔試行〕':'');
+  else tag='—';
+  document.getElementById('turnTag').textContent=tag;
+}
+
+/* ---------- 選択肢描画 ---------- */
+function optText(o){
+  if(o.card&&o.card.name)return o.card.name;
+  if(o.optionType==='YES')return 'はい';
+  if(o.optionType==='NO')return 'いいえ';
+  if(o.optionType==='NUMBER'&&o.number!=null)return o.number+' を選ぶ';
+  return o.label||('選択'+o.index);
+}
+function renderOptions(view){
+  const list=document.getElementById('optList');
+  const confBox=document.getElementById('optConfirm');
+  const sel=view.select;
+  pending=[];
+  confBox.classList.add('hidden');
+  if(view.result!==-1&&view.result!=null){ list.innerHTML='<span class="sbnote">対戦は決着しています。</span>'; return; }
+  if(!sel){
+    const m=(view.mover===1&&uiMode==='live'&&document.getElementById('oppMode').value!=='manual')
+      ? 'AIが思考中…' : '選択待ちの局面ではありません。';
+    list.innerHTML=`<span class="sbnote">${m}</span>`;
+    return;
+  }
+  const single=(sel.minCount===1&&sel.maxCount===1);
+  list.innerHTML='';
+  const ctx=CTX[sel.context]?`<div class="sbnote" style="margin-bottom:6px">${CTX[sel.context]}</div>`:'';
+  if(ctx){const d=document.createElement('div');d.innerHTML=ctx;list.appendChild(d.firstChild);}
+  sel.options.forEach(o=>{
+    const el=document.createElement('div'); el.className='optitem'; el.dataset.oi=o.index;
+    const img=(o.card&&o.card.img)?`<img class="oimg" src="${o.card.img}" alt="">`:'';
+    const sideLbl=o.side==='opp'?'相手側':'';
+    el.innerHTML=`${img}<span class="otxt">${optText(o)}</span><span class="oside">${sideLbl}</span>`;
+    el.onclick=()=>{
+      if(single){ submit([o.index]); return; }
+      const i=pending.indexOf(o.index);
+      if(i>=0)pending.splice(i,1);
+      else{ if(pending.length>=sel.maxCount)return; pending.push(o.index); }
+      el.classList.toggle('selp', pending.includes(o.index));
+      document.getElementById('confirmBtn').textContent=`決定 (${pending.length})`;
+    };
+    list.appendChild(el);
+  });
+  if(!single){
+    confBox.classList.remove('hidden');
+    const cb=document.getElementById('confirmBtn');
+    cb.textContent=`決定 (0)`;
+    cb.onclick=()=>{ if(pending.length<sel.minCount){alert(`${sel.minCount}個以上選んでください`);return;} submit(pending.slice()); };
+  }
+}
+
+/* ---------- ログ／ツリー ---------- */
+function renderLog(view){
+  const log=document.getElementById('log');
+  const items = uiMode==='search' ? (view.logs||[]) : (view.log||[]);
+  if(!items.length){ log.innerHTML='<span class="sbnote">（ログなし）</span>'; return; }
+  log.innerHTML=items.map(e=>{
+    const who={you:'P1',opp:'P2'}[e.who]||'';
+    const t=(e.turn!=null)?`T${e.turn} `:'';
+    return `<div class="l">${t}${who?('['+who+'] '):''}${e.text||''}</div>`;
+  }).join('');
+  log.scrollTop=log.scrollHeight;
+}
+let TREE={nodes:[],root:null};
+function renderTree(){
+  const box=document.getElementById('tree');
+  // parent -> children でぶら下げて簡易ツリー表示（インデント）
+  const byId={}; TREE.nodes.forEach(n=>byId[n.searchId]=n);
+  const kids={}; TREE.nodes.forEach(n=>{ (kids[n.parent]=kids[n.parent]||[]).push(n); });
+  const out=[];
+  function walk(id,depth){
+    const n=byId[id]; if(!n)return;
+    const cur=(id===curSearchId)?' cur':'';
+    const mv=n.moveLabel?`<span class="tmv">— ${n.moveLabel}</span>`:'';
+    const res=(n.result!==-1&&n.result!=null)?' 🏁':'';
+    out.push(`<div class="tnode${cur}" style="margin-left:${depth*14}px" data-sid="${id}">● ${mv}${res}</div>`);
+    (kids[id]||[]).forEach(c=>walk(c.searchId,depth+1));
+  }
+  if(TREE.root!=null)walk(TREE.root,0);
+  box.innerHTML=out.join('')||'<span class="sbnote">（ツリーなし）</span>';
+  box.querySelectorAll('.tnode').forEach(el=>{
+    el.onclick=async()=>{
+      const sid=Number(el.dataset.sid);
+      const r=await post('/api/sandbox/search/goto',{gid:GID,searchId:sid});
+      if(r.error){alert(r.error);return;}
+      curSearchId=sid; applySearch(r);
+    };
+  });
+}
+
+/* ---------- 適用 ---------- */
+function applyLive(state){
+  uiMode='live'; VIEW=state;
+  renderBoard(state); renderOptions(state); renderLog(state);
+}
+function applySearch(resp){
+  uiMode='search'; VIEW=resp.node; curSearchId=resp.node.searchId;
+  if(resp.tree){TREE=resp.tree;}
+  renderBoard(resp.node); renderOptions(resp.node); renderLog(resp.node); renderTree();
+}
+
+/* ---------- 送信 ---------- */
+async function submit(indices){
+  if(uiMode==='live'){
+    const r=await post('/api/sandbox/select',{gid:GID,picks:indices});
+    if(r.error){ alert(r.error); }
+    applyLive(r);
+  }else{
+    const r=await post('/api/sandbox/search/step',{gid:GID,searchId:curSearchId,picks:indices});
+    if(r.error){ alert(r.error); return; }
+    applySearch(r);
+  }
+}
+
+/* ---------- 相手モード切替 ---------- */
+async function applyOppConfig(){
+  const mode=document.getElementById('oppMode').value;
+  const agentSel=document.getElementById('oppAgent');
+  agentSel.classList.toggle('hidden', mode!=='agent');
+  let body;
+  if(mode==='manual') body={gid:GID,opp_manual:true};
+  else if(mode==='rule') body={gid:GID,opp_manual:false};
+  else body={gid:GID,opp_manual:false,opponent_agent_id:agentSel.value};
+  const r=await post('/api/sandbox/config',body);
+  if(r.error){ alert(r.error); return; }
+  applyLive(r);
+}
+
+/* ---------- What-if 制御 ---------- */
+async function beginWhatif(){
+  const r=await post('/api/sandbox/search/begin',{gid:GID,manual_coin:document.getElementById('wiCoin').checked});
+  if(r.error){ alert(r.error); return; }
+  document.getElementById('wiBegin').classList.add('hidden');
+  document.getElementById('wiEnd').classList.remove('hidden');
+  document.getElementById('treeBox').classList.remove('hidden');
+  applySearch(r);
+}
+async function endWhatif(){
+  const r=await post('/api/sandbox/search/end',{gid:GID});
+  document.getElementById('wiBegin').classList.remove('hidden');
+  document.getElementById('wiEnd').classList.add('hidden');
+  document.getElementById('treeBox').classList.add('hidden');
+  curSearchId=null; TREE={nodes:[],root:null};
+  applyLive(r);
+}
+
+/* ---------- 開始 ---------- */
+function deckValue(v){
+  // "user:<id>" or "sample"
+  if(v&&v.indexOf('user:')===0) return {mode:'user',id:v.slice(5)};
+  return {mode:'sample',id:''};
+}
+async function start(){
+  const btn=document.getElementById('startBtn'); btn.disabled=true;
+  document.getElementById('setupMsg').textContent='開始中…';
+  const my=deckValue(document.getElementById('myDeck').value);
+  const op=deckValue(document.getElementById('oppDeck').value);
+  const fd=new FormData();
+  fd.append('deck_mode',my.mode); if(my.mode==='user')fd.append('user_deck_id',my.id);
+  fd.append('opp_deck_mode',op.mode); if(op.mode==='user')fd.append('opp_user_deck_id',op.id);
+  const r=await postForm('/api/sandbox/new',fd);
+  btn.disabled=false;
+  if(r.error){ document.getElementById('setupMsg').textContent='エラー: '+r.error; return; }
+  GID=r.gid;
+  document.getElementById('setup').classList.add('hidden');
+  document.getElementById('game').classList.remove('hidden');
+  applyLive(r);
+}
+
+/* ---------- 初期化 ---------- */
+(async()=>{
+  // デッキ選択肢
+  try{
+    const cfg=await get('/api/decks');
+    const opts=['<option value="sample">サンプルデッキ（既定）</option>'];
+    (cfg.userDecks||[]).forEach(d=>{ if(d.private)return; opts.push(`<option value="user:${d.id}">${d.name}</option>`); });
+    document.getElementById('myDeck').innerHTML=opts.join('');
+    document.getElementById('oppDeck').innerHTML=opts.join('');
+  }catch(e){}
+  // 登録AI選択肢
+  try{
+    const ags=await get('/api/agents');
+    const list=Array.isArray(ags)?ags:(ags.agents||[]);
+    document.getElementById('oppAgent').innerHTML=
+      list.map(a=>`<option value="${a.id}">${a.name}</option>`).join('')||'<option value="">（登録AIなし）</option>';
+  }catch(e){}
+  document.getElementById('startBtn').onclick=start;
+  document.getElementById('oppMode').onchange=applyOppConfig;
+  document.getElementById('oppAgent').onchange=()=>{ if(document.getElementById('oppMode').value==='agent')applyOppConfig(); };
+  document.getElementById('wiBegin').onclick=beginWhatif;
+  document.getElementById('wiEnd').onclick=endWhatif;
+})();
+</script>
+{% endblock %}

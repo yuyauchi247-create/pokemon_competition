@@ -47,6 +47,7 @@ from sim_env import (  # noqa: E402
     to_observation_class, battle_start, battle_select, battle_finish,
     set_active_battle, render_option, card_name, card_meta, card_detail,
     option_card, translate_logs, card_image_file, CARD_IMAGES_DIR,
+    search_begin, search_step, search_end, build_determinization,
     OptionType, AreaType, SelectContext, EnergyType,
 )
 from replay_recorder import ReplayRecorder  # noqa: E402
@@ -771,15 +772,18 @@ def _advance_until_human(g):
                                         for c in ob.current.players[you].hand]
             except Exception:
                 pass
+        # 先攻/後攻(IS_FIRST=コイン)は、人間・AIどちらが選ぶ側でも常にランダムで自動決定する。
+        # rng は seed 無し（/api/new）なので毎ゲーム無作為＝先攻/後攻が毎回ランダムになる。
+        # （以前は人間の手番のときだけ無作為化しており、相手が先攻を固定選択するエージェントだと
+        #   人間が常に後攻になり得たため、どちらの選択側でも無作為化するよう変更。）
+        if ob.select and int(ob.select.context) == int(SelectContext.IS_FIRST):
+            pick = g["rng"].randint(0, len(ob.select.option) - 1)
+            obs = _record_select(g, [pick])
+            g["obs"] = obs
+            _emit(record_step=False)  # コイン等の差分も保存ログへ反映
+            steps += 1
+            continue
         if you in controlled:
-            # 先攻/後攻の選択（IS_FIRST）はランダムで自動決定
-            if ob.select and int(ob.select.context) == int(SelectContext.IS_FIRST):
-                pick = g["rng"].randint(0, len(ob.select.option) - 1)
-                obs = _record_select(g, [pick])
-                g["obs"] = obs
-                _emit(record_step=False)  # コイン等の差分も保存ログへ反映
-                steps += 1
-                continue
             break  # 外部操作（人間 or ステップ）の入力待ち
         obs = _record_select(g, _ai_pick(g, ob.select, obs))
         g["obs"] = obs
@@ -821,12 +825,15 @@ def _poke_json(pk):
     }
 
 
-def _state_json(g, viewer=HUMAN):
+def _state_json(g, viewer=HUMAN, reveal_all=False):
     """viewer（このレスポンスを見るプレイヤーの index）視点で状態を返す。
 
     - 自分(viewer)の手札のみ可視。相手手札は非公開（AI観戦モードのみ公開）。
     - 選択肢は viewer の手番のときだけ返す。
     - ポーリング重複防止のため ver（手の通し番号）を含める。
+    - reveal_all=True（サンドボックス）: 両者の手札を公開し、現在の手番プレイヤーの
+      選択肢を（viewer と一致しなくても）返す。out["mover"] に現手番の index を入れる。
+      盤面の向きは viewer 固定（＝プレイヤー0を下段）にする。
     """
     obs = g["obs"]
     ob = to_observation_class(obs)
@@ -874,13 +881,23 @@ def _state_json(g, viewer=HUMAN):
                            ("こんらん", p.confused)) if v],
         }
 
+    def _hand_of(idx):
+        """idx の手札: 手番中なら obs から、そうでなければキャッシュ（最後に見えた手札）。"""
+        return ([card_meta(c.id) for c in st.players[idx].hand]
+                if st.players[idx].hand is not None else g["hand_cache"].get(idx))
+
     # 自分の手札: 自分の手番なら obs から、そうでなければキャッシュ（最後に見えた手札）。
-    you_hand = ([card_meta(c.id) for c in st.players[you].hand]
-                if st.players[you].hand is not None else g["hand_cache"].get(you))
-    # 相手の手札: AI観戦のみ公開。人 vs AI / pvp は非公開。
-    opp_hand = g["hand_cache"].get(opp) if mode == "ai" else None
+    you_hand = _hand_of(you)
+    # 相手の手札: サンドボックスと AI観戦のみ公開。人 vs AI / pvp は非公開。
+    if reveal_all:
+        opp_hand = _hand_of(opp)
+    elif mode == "ai":
+        opp_hand = g["hand_cache"].get(opp)
+    else:
+        opp_hand = None
     out["board"] = {"turn": st.turn, "you": side(you, you_hand), "opp": side(opp, opp_hand)}
     out["yourTurn"] = (cur_idx == viewer)
+    out["mover"] = cur_idx
     # イベント: pvp は emit 時に蓄積した viewer 視点の最新差分を使う（都度翻訳しない）。
     # 各イベントに seq が付いており、クライアントは描画済み seq を除外して二重表示を防ぐ。
     if mode == "pvp":
@@ -890,21 +907,29 @@ def _state_json(g, viewer=HUMAN):
     else:
         out["events"] = g["events"]
         out["seq"] = g.get("seq", 0)
+    if reveal_all:  # サンドボックス: テスト用に累積ログ全体を返す
+        out["log"] = [{"turn": e.get("turn"), "who": e.get("who"), "text": e.get("text")}
+                      for e in g.get("log", [])]
 
-    # viewer の手番のときだけ選択肢を出す
+    # viewer の手番のときだけ選択肢を出す（reveal_all では現手番のぶんを常に出す）
     sel = ob.select
-    if sel is not None and cur_idx == viewer and g["result"] == -1:
+    if sel is not None and (cur_idx == viewer or reveal_all) and g["result"] == -1:
         opts = []
         for i, o in enumerate(sel.option):
             try:
                 otype = OptionType(o.type).name
             except ValueError:
                 otype = str(o.type)
+            pi = getattr(o, "playerIndex", None)
+            # 対象がどちら側の盤面か（盤面の向きは viewer 基準なので viewer で you/opp を判定）。
+            # これが無いとフロントが相手ベンチ対象を自分側に誤って割り当てる。
+            side = "opp" if (pi is not None and pi != viewer) else "you"
             opts.append({
                 "index": i, "label": render_option(o, st, sel),
                 "card": option_card(o, st, sel),
                 "optionType": otype,
                 "area": getattr(o, "area", None), "srcIndex": getattr(o, "index", None),
+                "playerIndex": pi, "side": side,
                 "inPlayArea": getattr(o, "inPlayArea", None),
                 "inPlayIndex": getattr(o, "inPlayIndex", None),
                 "attackId": getattr(o, "attackId", None),
@@ -991,6 +1016,11 @@ def tournament():
 @app.route("/evaluate")
 def evaluate_page():
     return render_template("evaluate.html")
+
+
+@app.route("/sandbox")
+def sandbox_page():
+    return render_template("sandbox.html")
 
 
 def _read_json(path):
@@ -2229,6 +2259,303 @@ def api_step():
     except SelectionError as exc:
         return jsonify({"error": str(exc), **_state_json(g)}), 400
     return jsonify(_state_json(g))
+
+
+# ─────────────────────────────────────────────────────────────
+# サンドボックス（お試し）: 両者を手動/AIで操作して局面を作り、
+# search_* で What-if 試行（手を試す→効果ログ観察→任意ノードへ巻き戻す）を行う。
+# ─────────────────────────────────────────────────────────────
+
+def _sandbox_opp_agent(gid, agent_id, opp_deck):
+    """相手をAIにするとき、登録AIのコードを相手デッキ(固定)で動かす callable を作る。"""
+    code = read_user_agent_code(agent_id)
+    name = next((a["name"] for a in list_user_agents() if a["id"] == agent_id), agent_id)
+    agent, _used_deck, _src = _materialize_agent(
+        gid, "opponent", code, f"AI（{name}）", opp_deck,
+        forced_deck=opp_deck, extra_src=user_agent_dir(agent_id))
+    return agent, f"AI（{name}）"
+
+
+@app.route("/api/sandbox/new", methods=["POST"])
+def api_sandbox_new():
+    """サンドボックス開始: 自分/相手のデッキを両方選び、両者手動で局面を作る。"""
+    gid = uuid.uuid4().hex
+    g = _new_game_state(gid)
+    g["rng"] = random.Random(request.form.get("seed") or None)
+    try:
+        my_deck, my_label = _selected_deck(
+            "deck_mode", "deck_id", "user_deck_id", "deck_file",
+            agent_id_field="deck_agent_id", pw_field="deck_password")
+        _require_basic_deck(my_deck)
+        opp_deck, opp_label = _selected_deck(
+            "opp_deck_mode", "opp_deck_id", "opp_user_deck_id", "opp_deck_file",
+            agent_id_field="opp_deck_agent_id", pw_field="opp_deck_password")
+        _require_basic_deck(opp_deck)
+    except SelectionError as exc:
+        _destroy_game(gid)
+        return _selection_error(str(exc))
+    obs, start = battle_start(my_deck, opp_deck)
+    if obs is None:
+        _destroy_game(gid)
+        return jsonify({"error": f"battle start failed (errorType={start.errorType})"}), 500
+    g["ptr"] = start.battlePtr
+    g["obs"], g["result"], g["running"], g["events"] = obs, -1, True, []
+    g["mode"] = "sandbox"
+    g["controlled"] = {0, 1}          # 既定は両者手動
+    g["opp_manual"] = True
+    g["player_label"], g["opponent_label"] = "プレイヤー1", "プレイヤー2"
+    g["deck_label"] = f"{my_label} / {opp_label}"
+    g["my_deck"], g["opp_deck"] = list(my_deck), list(opp_deck)
+    g["opponent_type"], g["opponent_agent"] = "rule", None
+    g["search"] = None
+    g["recorder"] = ReplayRecorder([g["player_label"], g["opponent_label"]], episode_id=gid)
+    GAMES[gid] = g
+    _evict_if_needed()
+    _activate(g)
+    try:
+        _advance_until_human(g)
+    except SelectionError as exc:
+        return _selection_error(str(exc))
+    return jsonify(_state_json(g, HUMAN, reveal_all=True))
+
+
+@app.route("/api/sandbox/select", methods=["POST"])
+def api_sandbox_select():
+    """現在の手番プレイヤー（自分/相手どちらでも）の1手を進める。"""
+    g = _get_game(_request_gid())
+    if g is None or g["obs"] is None or g.get("mode") != "sandbox":
+        return jsonify(NO_GAME)
+    if g["result"] != -1:
+        return jsonify(_state_json(g, HUMAN, reveal_all=True))
+    ob = to_observation_class(g["obs"])
+    sel = ob.select
+    if sel is None:
+        return jsonify(_state_json(g, HUMAN, reveal_all=True))
+    picks = (request.get_json(silent=True) or {}).get("picks", [])
+    n = len(sel.option)
+    ok = (isinstance(picks, list) and all(isinstance(p, int) for p in picks)
+          and sel.minCount <= len(picks) <= min(sel.maxCount, n)
+          and all(0 <= p < n for p in picks) and len(set(picks)) == len(picks))
+    if not ok:
+        return jsonify({"error": "invalid picks", **_state_json(g, HUMAN, reveal_all=True)}), 400
+    g["events"] = []
+    g["obs"] = _record_select(g, picks)
+    g["ver"] = g.get("ver", 0) + 1
+    try:
+        _advance_until_human(g)
+    except SelectionError as exc:
+        return jsonify({"error": str(exc), **_state_json(g, HUMAN, reveal_all=True)}), 400
+    return jsonify(_state_json(g, HUMAN, reveal_all=True))
+
+
+@app.route("/api/sandbox/config", methods=["POST"])
+def api_sandbox_config():
+    """相手を「手動 / AI」で切り替える。AI化時は登録AIを選べる。"""
+    g = _get_game(_request_gid())
+    if g is None or g.get("mode") != "sandbox":
+        return jsonify(NO_GAME)
+    body = request.get_json(silent=True) or {}
+    opp_manual = bool(body.get("opp_manual", True))
+    g["opp_manual"] = opp_manual
+    if opp_manual:
+        g["controlled"] = {0, 1}
+        g["opponent_type"], g["opponent_agent"] = "rule", None
+        g["opponent_label"] = "プレイヤー2"
+    else:
+        agent_id = (body.get("opponent_agent_id") or "").strip()
+        try:
+            if agent_id:
+                agent, label = _sandbox_opp_agent(g["gid"], agent_id, g["opp_deck"])
+                g["opponent_type"], g["opponent_agent"] = "custom", agent
+                g["opponent_label"] = label
+            else:
+                g["opponent_type"], g["opponent_agent"] = "rule", None
+                g["opponent_label"] = "ルールベースAI"
+        except SelectionError as exc:
+            return _selection_error(str(exc))
+        except Exception as exc:
+            return _selection_error(f"AIの読み込みに失敗しました: {exc}")
+        g["controlled"] = {HUMAN}
+        # 相手(index1)の手番が残っていれば消化する
+        if g["result"] == -1 and g["obs"] is not None:
+            _activate(g)
+            try:
+                _advance_until_human(g)
+            except SelectionError as exc:
+                return jsonify({"error": str(exc), **_state_json(g, HUMAN, reveal_all=True)}), 400
+    return jsonify(_state_json(g, HUMAN, reveal_all=True))
+
+
+def _search_state_json(search_state, your_index):
+    """SearchState(Observation) を描画用 JSON にする。盤面の向きは your_index を下段に固定。"""
+    ob = search_state.observation
+    st = ob.current
+    out = {"searchId": search_state.searchId, "result": -1}
+    if st is None:
+        out.update({"board": None, "select": None, "logs": [], "mover": None})
+        return out
+    if getattr(st, "result", -1) is not None and st.result >= 0:
+        out["result"] = st.result
+
+    def side(idx):
+        p = st.players[idx]
+        act = p.active[0] if p.active and p.active[0] else None
+        hand = [card_meta(c.id) for c in p.hand] if p.hand is not None else None
+        return {
+            "active": _poke_json(act),
+            "bench": [_poke_json(b) for b in p.bench],
+            "handCount": p.handCount, "deck": p.deckCount,
+            "prize": len(p.prize), "discard": len(p.discard),
+            "hand": hand,
+            "discardList": [card_meta(c.id) for c in p.discard],
+            "conditions": [c for c, v in (("どく", p.poisoned), ("やけど", p.burned),
+                           ("ねむり", p.asleep), ("まひ", p.paralyzed),
+                           ("こんらん", p.confused)) if v],
+        }
+
+    you, opp = your_index, 1 - your_index
+    out["board"] = {"turn": st.turn, "you": side(you), "opp": side(opp)}
+    out["mover"] = st.yourIndex
+    try:
+        out["logs"] = translate_logs(ob, your_index)
+    except Exception:
+        out["logs"] = []
+    sel = ob.select
+    if sel is not None and out["result"] == -1:
+        opts = []
+        for i, o in enumerate(sel.option):
+            try:
+                otype = OptionType(o.type).name
+            except ValueError:
+                otype = str(o.type)
+            pi = getattr(o, "playerIndex", None)
+            side_ = "opp" if (pi is not None and pi != you) else "you"
+            opts.append({
+                "index": i, "label": render_option(o, st, sel),
+                "card": option_card(o, st, sel), "optionType": otype,
+                "area": getattr(o, "area", None), "srcIndex": getattr(o, "index", None),
+                "playerIndex": pi, "side": side_,
+                "inPlayArea": getattr(o, "inPlayArea", None),
+                "inPlayIndex": getattr(o, "inPlayIndex", None),
+                "attackId": getattr(o, "attackId", None),
+                "number": getattr(o, "number", None),
+            })
+        out["select"] = {"context": int(sel.context), "minCount": sel.minCount,
+                         "maxCount": min(sel.maxCount, len(sel.option)), "options": opts}
+    else:
+        out["select"] = None
+    return out
+
+
+def _search_tree_summary(g):
+    """探索ツリーの軽量サマリ（UI 描画用）。"""
+    s = g.get("search") or {}
+    nodes = s.get("nodes", {})
+    return {"root": s.get("root"),
+            "nodes": [{"searchId": n["searchId"], "parent": n["parent"],
+                       "moveLabel": n.get("moveLabel"), "mover": n["view"].get("mover"),
+                       "result": n["view"].get("result", -1)}
+                      for n in nodes.values()]}
+
+
+@app.route("/api/sandbox/search/begin", methods=["POST"])
+def api_sandbox_search_begin():
+    """現局面から What-if 探索を開始（相手の隠れ札を決定化、コイン固定オプション）。"""
+    g = _get_game(_request_gid())
+    if g is None or g["obs"] is None or g.get("mode") != "sandbox":
+        return jsonify(NO_GAME)
+    if g["obs"].get("search_begin_input") is None or g["obs"].get("select") is None:
+        return jsonify({"error": "この局面からは試行を開始できません（選択待ちの局面で開始してください）。"}), 400
+    manual_coin = bool((request.get_json(silent=True) or {}).get("manual_coin", False))
+    ob = to_observation_class(g["obs"])
+    yi = ob.current.yourIndex if ob.current else HUMAN
+    det = build_determinization(ob, yi, g.get("my_deck") or [], g.get("opp_deck"))
+    _activate(g)
+    try:
+        root_state = search_begin(ob, manual_coin=manual_coin, **det)
+    except Exception as exc:
+        try:
+            search_end()
+        except Exception:
+            pass
+        return jsonify({"error": f"探索の開始に失敗しました: {exc}"}), 400
+    if root_state is None:
+        try:
+            search_end()
+        except Exception:
+            pass
+        return jsonify({"error": "探索を開始できませんでした。"}), 400
+    view = _search_state_json(root_state, yi)
+    g["search"] = {"your_index": yi, "root": root_state.searchId,
+                   "manual_coin": manual_coin, "nodes": {}}
+    g["search"]["nodes"][root_state.searchId] = {
+        "searchId": root_state.searchId, "parent": None, "picks": None,
+        "moveLabel": "開始局面", "view": view}
+    return jsonify({"node": view, "tree": _search_tree_summary(g)})
+
+
+@app.route("/api/sandbox/search/step", methods=["POST"])
+def api_sandbox_search_step():
+    """探索ツリーの指定ノードから1手進める（任意ノードから分岐できる）。"""
+    g = _get_game(_request_gid())
+    if g is None or g.get("mode") != "sandbox" or not g.get("search"):
+        return jsonify({"error": "試行が開始されていません。"}), 400
+    body = request.get_json(silent=True) or {}
+    sid = body.get("searchId")
+    picks = body.get("picks", [])
+    s = g["search"]
+    parent = s["nodes"].get(sid)
+    if parent is None:
+        return jsonify({"error": "指定のノードが見つかりません。"}), 400
+    psel = parent["view"].get("select")
+    if psel is None:
+        return jsonify({"error": "このノードは選択待ちではありません。"}), 400
+    n = len(psel["options"])
+    ok = (isinstance(picks, list) and all(isinstance(p, int) for p in picks)
+          and psel["minCount"] <= len(picks) <= min(psel["maxCount"], n)
+          and all(0 <= p < n for p in picks) and len(set(picks)) == len(picks))
+    if not ok:
+        return jsonify({"error": "invalid picks"}), 400
+    _activate(g)
+    try:
+        ns = search_step(sid, picks)
+    except Exception as exc:
+        return jsonify({"error": f"手を進められませんでした: {exc}"}), 400
+    yi = s["your_index"]
+    view = _search_state_json(ns, yi)
+    label = " / ".join(psel["options"][p]["label"] for p in picks) or "（決定）"
+    s["nodes"][ns.searchId] = {"searchId": ns.searchId, "parent": sid,
+                               "picks": picks, "moveLabel": label, "view": view}
+    return jsonify({"node": view, "tree": _search_tree_summary(g)})
+
+
+@app.route("/api/sandbox/search/goto", methods=["POST"])
+def api_sandbox_search_goto():
+    """指定ノードの盤面/選択肢を返す（＝巻き戻し。ツリーは破壊しない）。"""
+    g = _get_game(_request_gid())
+    if g is None or g.get("mode") != "sandbox" or not g.get("search"):
+        return jsonify({"error": "試行が開始されていません。"}), 400
+    sid = (request.get_json(silent=True) or {}).get("searchId")
+    node = g["search"]["nodes"].get(sid)
+    if node is None:
+        return jsonify({"error": "指定のノードが見つかりません。"}), 400
+    return jsonify({"node": node["view"], "tree": _search_tree_summary(g)})
+
+
+@app.route("/api/sandbox/search/end", methods=["POST"])
+def api_sandbox_search_end():
+    """探索を終了しメモリを解放、ライブ盤面へ戻る。"""
+    g = _get_game(_request_gid())
+    if g is None or g.get("mode") != "sandbox":
+        return jsonify(NO_GAME)
+    if g.get("search"):
+        _activate(g)
+        try:
+            search_end()
+        except Exception:
+            pass
+        g["search"] = None
+    return jsonify(_state_json(g, HUMAN, reveal_all=True))
 
 
 if __name__ == "__main__":

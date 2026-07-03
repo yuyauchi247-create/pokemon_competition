@@ -6,7 +6,9 @@
 """
 import csv
 import json
+import random
 import sys
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +24,7 @@ if str(SAMPLE_SUBMISSION) not in sys.path:
 # cg は data/sample_submission 配下のパッケージ
 from cg.api import (  # noqa: E402
     to_observation_class, all_card_data, all_attack,
+    search_begin, search_step, search_end, search_release,
     OptionType, SelectContext, AreaType, EnergyType, CardType, LogType,
 )
 from cg.game import battle_start, battle_select, battle_finish  # noqa: E402
@@ -551,3 +554,105 @@ def render_board(state) -> str:
         hand = "  ".join(f"#{i}:{card_name(c.id)}" for i, c in enumerate(me.hand))
         lines.append(f"[自分の手札] {hand}")
     return "\n".join(lines)
+
+
+# ---- What-if 探索（search_begin）用の決定化ヘルパ ----
+
+def _any_basic_id(pool=None):
+    """基本たねポケモンの cardId を1つ返す（探索の相手アクティブ仮定用）。
+
+    pool（デッキのID列）が渡されればその中のたねを優先。無ければ全カードから探す。
+    """
+    cards = _cards()
+    if pool:
+        for cid in pool:
+            c = cards.get(cid)
+            if c and getattr(c, "basic", False):
+                return cid
+    for cid, c in cards.items():
+        if getattr(c, "basic", False):
+            return cid
+    return next(iter(cards), 0)
+
+
+def _ensure_basic(deck_pred, pool):
+    """予測デッキにたねポケモンが1枚も無ければ先頭を差し替える。
+
+    search_begin は「相手デッキに最低1枚のたねポケモン」を要求するため。
+    """
+    cards = _cards()
+    if any(getattr(cards.get(cid), "basic", False) for cid in deck_pred):
+        return deck_pred
+    if deck_pred:
+        deck_pred[0] = _any_basic_id(pool)
+    return deck_pred
+
+
+def _seen_cards(pl):
+    """プレイヤーの「見えている札」(手札・場・トラッシュ)を Counter で数える。"""
+    c = Counter()
+    for card in (pl.hand or []):
+        c[card.id] += 1
+    for p in (pl.active + pl.bench):
+        if p is None:
+            continue
+        c[p.id] += 1
+        for grp in (p.energyCards, p.tools, p.preEvolution):
+            for card in grp:
+                c[card.id] += 1
+    for card in pl.discard:
+        c[card.id] += 1
+    return c
+
+
+def _hidden_pool(deck_list, seen, need):
+    """デッキ60枚から見えている札を除いた「隠れ札」を need 枚シャッフルして返す。"""
+    remaining = []
+    for cid, n in Counter(deck_list).items():
+        remaining.extend([cid] * max(0, n - seen.get(cid, 0)))
+    if len(remaining) < need:  # 念のため不足分を補う（デッキ推定がズレていても落ちないように）
+        fill = deck_list or [_any_basic_id()]
+        remaining += random.choices(fill, k=need - len(remaining))
+    random.shuffle(remaining)
+    return remaining
+
+
+def build_determinization(obs, your_index, my_deck, opp_deck=None):
+    """search_begin に渡す隠れ情報(山札/サイド/相手手札/相手アクティブ)を1つ仮定する。
+
+    PIMC の「決定化」。obs は agent に渡ってきた Observation、your_index は探索する側。
+    my_deck は自分の60枚（既知）。opp_deck は分かっていれば相手の60枚
+    （サンドボックスでは自分で選ぶので既知）。未指定なら自デッキを相手プールに流用する。
+    返り値は search_begin のキーワード引数 dict。
+    """
+    state = obs.current
+    me = state.players[your_index]
+    opp = state.players[1 - your_index]
+
+    # 自分の山札/サイド = 自デッキ − 見えている自分の札
+    my_hidden = _hidden_pool(my_deck, _seen_cards(me), me.deckCount + len(me.prize))
+    your_deck = my_hidden[:me.deckCount]
+    your_prize = my_hidden[me.deckCount:me.deckCount + len(me.prize)]
+
+    # 相手: デッキ既知なら「相手デッキ − 見えている相手の札」から手札/山札/サイドを配分。
+    #        未知なら自デッキを mirror prior として流用する。
+    if opp_deck:
+        need = opp.deckCount + len(opp.prize) + opp.handCount
+        opp_hidden = _hidden_pool(opp_deck, _seen_cards(opp), need)
+        opp_hand = opp_hidden[:opp.handCount]
+        opp_deck_pred = opp_hidden[opp.handCount:opp.handCount + opp.deckCount]
+        opp_prize = opp_hidden[opp.handCount + opp.deckCount:need]
+    else:
+        pool = my_deck
+        opp_deck_pred = random.choices(pool, k=opp.deckCount) if opp.deckCount else []
+        opp_prize = random.choices(pool, k=len(opp.prize)) if opp.prize else []
+        opp_hand = random.choices(pool, k=opp.handCount) if opp.handCount else []
+    opp_deck_pred = _ensure_basic(opp_deck_pred, opp_deck or my_deck)
+
+    opp_active = []
+    if len(opp.active) > 0 and opp.active[0] is None:  # 相手の場が裏向きならたねを仮定
+        opp_active = [_any_basic_id(opp_deck or my_deck)]
+
+    return dict(your_deck=your_deck, your_prize=your_prize,
+                opponent_deck=opp_deck_pred, opponent_prize=opp_prize,
+                opponent_hand=opp_hand, opponent_active=opp_active)
