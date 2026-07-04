@@ -333,8 +333,17 @@ async function saveBuilderDeck(){
     r=await post('/api/user_decks',body);
   }
   if(r.error){builderMessage(r.error);return;}
+  const wasNew=!EDIT_ID;
   clearDirty(); discardDraft();   // 保存できたので未保存フラグと下書きを消す
-  location.href='/decks';   // 保存/更新したら一覧へ
+  // 画面遷移はせず、保存完了だけ通知する。新規作成時は以降の保存が同じデッキの
+  // 更新になるよう EDIT_ID を確定し、URL も ?edit=<id> へ差し替える（リロードで重複作成しない）。
+  if(wasNew && r.id){
+    EDIT_ID=r.id;
+    const h=document.querySelector('#builder h2'); if(h)h.textContent='デッキ編集';
+    document.getElementById('saveDeckBtn').textContent='このデッキを更新';
+    try{ history.replaceState(null,'', '/builder?edit='+encodeURIComponent(r.id)); }catch(e){}
+  }
+  builderMessage('✅ 「'+name+'」を'+(wasNew?'保存':'更新')+'しました。');
 }
 
 // ?edit=<id> があれば既存デッキを読み込んで編集モードにする

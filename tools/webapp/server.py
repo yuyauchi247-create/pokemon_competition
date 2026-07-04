@@ -48,6 +48,7 @@ from sim_env import (  # noqa: E402
     set_active_battle, render_option, card_name, card_meta, card_detail,
     option_card, translate_logs, card_image_file, CARD_IMAGES_DIR,
     search_begin, search_step, search_end, build_determinization,
+    attack_source_card,
     OptionType, AreaType, SelectContext, EnergyType,
 )
 from replay_recorder import ReplayRecorder  # noqa: E402
@@ -895,7 +896,15 @@ def _state_json(g, viewer=HUMAN, reveal_all=False):
         opp_hand = g["hand_cache"].get(opp)
     else:
         opp_hand = None
-    out["board"] = {"turn": st.turn, "you": side(you, you_hand), "opp": side(opp, opp_hand)}
+    # 場に出ているスタジアム（State.stadium は 0/1 枚。両プレイヤー共有の1枠）。
+    stadium = None
+    try:
+        if getattr(st, "stadium", None):
+            stadium = card_meta(st.stadium[0].id)
+    except Exception:
+        stadium = None
+    out["board"] = {"turn": st.turn, "you": side(you, you_hand), "opp": side(opp, opp_hand),
+                    "stadium": stadium}
     out["yourTurn"] = (cur_idx == viewer)
     out["mover"] = cur_idx
     # イベント: pvp は emit 時に蓄積した viewer 視点の最新差分を使う（都度翻訳しない）。
@@ -924,9 +933,17 @@ def _state_json(g, viewer=HUMAN, reveal_all=False):
             # 対象がどちら側の盤面か（盤面の向きは viewer 基準なので viewer で you/opp を判定）。
             # これが無いとフロントが相手ベンチ対象を自分側に誤って割り当てる。
             side = "opp" if (pi is not None and pi != viewer) else "you"
+            card = option_card(o, st, sel)
+            # こうまんしれい等「他ポケモンのワザを使う」ATTACK選択肢はカード参照が無い。
+            # attackId から元ポケモンを逆引きしてカードを載せ、フロントでカード表示できるようにする。
+            aid = getattr(o, "attackId", None)
+            if card is None and otype == "ATTACK" and aid is not None:
+                scid = attack_source_card(aid)
+                if scid:
+                    card = card_meta(scid)
             opts.append({
                 "index": i, "label": render_option(o, st, sel),
-                "card": option_card(o, st, sel),
+                "card": card,
                 "optionType": otype,
                 "area": getattr(o, "area", None), "srcIndex": getattr(o, "index", None),
                 "playerIndex": pi, "side": side,
