@@ -46,7 +46,7 @@ from selection import (  # noqa: E402
 from sim_env import (  # noqa: E402
     to_observation_class, battle_start, battle_select, battle_finish,
     set_active_battle, render_option, card_name, card_meta, card_detail,
-    option_card, translate_logs, card_image_file, CARD_IMAGES_DIR,
+    option_card, option_energy_card, translate_logs, card_image_file, CARD_IMAGES_DIR,
     search_begin, search_step, search_end, build_determinization,
     attack_source_card,
     OptionType, AreaType, SelectContext, EnergyType,
@@ -941,6 +941,13 @@ def _state_json(g, viewer=HUMAN, reveal_all=False):
                 scid = attack_source_card(aid)
                 if scid:
                     card = card_meta(scid)
+            # ENERGY / ENERGY_CARD の area/index は“エネが付いているポケモン”を指すため、
+            # option_card だとポケモンのカードが返ってしまう（「トラッシュするエネルギーを
+            # 選んでください」でポケモン画像が出るバグ）。実際のエネカードに差し替える。
+            if otype in ("ENERGY", "ENERGY_CARD"):
+                ecard = option_energy_card(o, st)
+                if ecard is not None:
+                    card = ecard
             opts.append({
                 "index": i, "label": render_option(o, st, sel),
                 "card": card,

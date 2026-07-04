@@ -137,6 +137,49 @@ def option_card(o, state=None, select=None):
     return card_meta(cid) if cid else None
 
 
+def _pokemon_at(state, area, index, player):
+    """(エリア, index, プレイヤー) からポケモンの実体（dataclass）を返す。無ければ None。"""
+    if area is None or index is None or state is None:
+        return None
+    try:
+        a = AreaType(area)
+    except ValueError:
+        return None
+    pi = player if player is not None else state.yourIndex
+    try:
+        p = state.players[pi]
+    except (IndexError, ValueError):
+        return None
+    arr = p.active if a == AreaType.ACTIVE else p.bench if a == AreaType.BENCH else None
+    if arr is None or index >= len(arr) or arr[index] is None:
+        return None
+    return arr[index]
+
+
+def option_energy_card(o, state=None):
+    """ENERGY / ENERGY_CARD 選択肢が指す「実際のエネルギーカード」の card_meta を返す。
+
+    これらの選択肢の area/index は“エネが付いているポケモン”を指し（cg の仕様）、
+    実際のエネカードは そのポケモンの energyCards[energyIndex] にある。option_card を
+    そのまま使うとポケモン側が返ってしまうため、エネ選択ではこちらで解決する。
+    """
+    if state is None:
+        return None
+    eidx = getattr(o, "energyIndex", None)
+    if eidx is None:
+        return None
+    poke = _pokemon_at(state, getattr(o, "inPlayArea", None) or getattr(o, "area", None),
+                       getattr(o, "inPlayIndex", None) if getattr(o, "inPlayIndex", None) is not None
+                       else getattr(o, "index", None),
+                       getattr(o, "playerIndex", None))
+    if poke is None:
+        return None
+    ecards = getattr(poke, "energyCards", None)
+    if not ecards or eidx < 0 or eidx >= len(ecards):
+        return None
+    return card_meta(getattr(ecards[eidx], "id", None))
+
+
 # ---- 日本語カード詳細（JP CSV を 1ワザ=1行 で集約）----
 _JP_DETAIL = None
 
