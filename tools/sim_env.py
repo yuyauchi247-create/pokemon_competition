@@ -411,6 +411,21 @@ def attack_label(aid):
     return f"{a.name}(ダメージ{a.damage})"
 
 
+# ワザID → そのワザを持つカードID の逆引き（こうまんしれい等「他ポケモンのワザ」表示用）
+_ATTACK_TO_CARD = None
+
+
+def attack_source_card(aid):
+    """指定ワザ(attackId)を持つカードの cardId を返す。無ければ None。"""
+    global _ATTACK_TO_CARD
+    if _ATTACK_TO_CARD is None:
+        _ATTACK_TO_CARD = {}
+        for c in all_card_data():
+            for a in (getattr(c, "attacks", None) or []):
+                _ATTACK_TO_CARD.setdefault(a, c.cardId)
+    return _ATTACK_TO_CARD.get(aid)
+
+
 def _lead_int(s):
     """文字列の先頭の数字を取り出す（'100×' -> 100）。無ければ None。"""
     s = (s or "").strip()
