@@ -428,13 +428,15 @@ document.getElementById('tempSaveBtn').onclick=tempSaveDraft;
 document.getElementById('saveDeckBtn').onclick=saveBuilderDeck;
 
 // ===== 手札テスト（初手5枚／+1ドロー） =====
-let HAND=[], DRAWPILE=[];
+let HAND=[], DRAWPILE=[], MULLIGANS=0;
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function countBasics(ids){return ids.filter(id=>{const c=cardById(id);return c&&c.stage&&c.stage.includes('たね');}).length;}
 function renderHand(){
   const box=document.getElementById('testHand'), info=document.getElementById('handInfo');
   if(!HAND.length){box.innerHTML='';info.textContent='';return;}
-  const basics=HAND.filter(id=>{const c=cardById(id);return c.stage&&c.stage.includes('たね');}).length;
-  info.textContent=`手札${HAND.length}枚 / 山札残り${DRAWPILE.length}枚 / たねポケ${basics}枚`+(basics?'':'（⚠たね無し＝マリガン）');
+  const basics=countBasics(HAND);
+  info.textContent=`手札${HAND.length}枚 / 山札残り${DRAWPILE.length}枚 / たねポケ${basics}枚 / マリガン${MULLIGANS}回`
+    +(basics?'':'（⚠デッキにたねポケモンがありません）');
   box.innerHTML=HAND.map(id=>{
     const c=cardById(id);
     const inner=c.img?`<img src="${c.img}" loading="lazy" alt="${c.name}">`:`<div class="ph">${c.name}</div>`;
@@ -445,8 +447,19 @@ function renderHand(){
 }
 function drawOpening(){
   if(!CURRENT_DECK.length){document.getElementById('handInfo').textContent='デッキにカードがありません。';return;}
-  DRAWPILE=shuffle(CURRENT_DECK.slice());
-  HAND=DRAWPILE.splice(0,Math.min(5,DRAWPILE.length));
+  // マリガン: 手札にたねポケモンが1枚も無ければ、全部山札に戻して切り直し引き直す。
+  // たねが1枚以上出るまで繰り返し、その回数（マリガン回数）を記録して表示する。
+  // デッキにたねが皆無だと無限ループになるため、その場合は1回引いて打ち切る。
+  const deckHasBasic = countBasics(CURRENT_DECK) > 0;
+  MULLIGANS=0;
+  const MAXTRIES=500;
+  for(let tries=0; tries<MAXTRIES; tries++){
+    DRAWPILE=shuffle(CURRENT_DECK.slice());
+    HAND=DRAWPILE.splice(0,Math.min(5,DRAWPILE.length));
+    if(!deckHasBasic) break;            // デッキにたね皆無＝引き直しても無駄
+    if(countBasics(HAND)>0) break;      // たねあり＝初手成立
+    MULLIGANS++;                         // たね無し＝マリガン1回してループ
+  }
   renderHand();
 }
 function drawOne(){
@@ -457,7 +470,7 @@ function drawOne(){
 }
 document.getElementById('draw5Btn').onclick=drawOpening;
 document.getElementById('draw1Btn').onclick=drawOne;
-document.getElementById('handClearBtn').onclick=()=>{HAND=[];DRAWPILE=[];renderHand();};
+document.getElementById('handClearBtn').onclick=()=>{HAND=[];DRAWPILE=[];MULLIGANS=0;renderHand();};
 
 // 作成中デッキをCSV（カードID 1行1枚）で出力（ダウンロード）。
 function sanitizeFileName(s){return (s||'deck').replace(/[\\/:*?"<>|]+/g,'_').trim()||'deck';}
