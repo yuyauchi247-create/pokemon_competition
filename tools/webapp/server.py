@@ -1619,7 +1619,9 @@ def api_cards():
             "category": detail.get("category", ""),
             "rule": detail.get("rule", ""),
             "evolvesFrom": detail.get("evolvesFrom", ""),
-            "maxDamage": _max_attack_damage(detail),  # 攻撃力ソート用
+            "maxDamage": _max_attack_damage(detail),  # 攻撃力ソート/レンジ検索用
+            "hasAbility": any(str(m.get("name") or "").startswith("[特性]")
+                              for m in (detail.get("moves") or [])),  # 特性持ちフィルタ用
             "effectText": " ".join(parts),            # 効果テキスト検索用
         })
     _ALL_CARDS_CACHE = cards
