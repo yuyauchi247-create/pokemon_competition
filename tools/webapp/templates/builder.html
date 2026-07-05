@@ -28,6 +28,8 @@
       <select id="energyFilter"><option value="">全タイプ</option><option value="GRASS">草</option><option value="FIRE">炎</option><option value="WATER">水</option><option value="LIGHTNING">雷</option><option value="PSYCHIC">超</option><option value="FIGHTING">闘</option><option value="DARKNESS">悪</option><option value="METAL">鋼</option><option value="COLORLESS">無色</option></select>
       <select id="flagFilter"><option value="">レアリティ問わず</option><option value="ex">ポケモンex</option><option value="MEGA">メガex</option><option value="tera">テラスタル</option><option value="ACE">ACE SPEC</option></select>
       <select id="sortBy"><option value="">並び: ID順</option><option value="hp">HP高い順</option><option value="dmg">攻撃力高い順</option><option value="type">タイプ順</option></select>
+      <label class="filterChk" title="特性を持つポケモンだけを表示" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><input type="checkbox" id="abilityFilter"> 特性持ち</label>
+      <span class="dmgRange" title="ワザの最大ダメージで絞り込み（先頭の数値）" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">⚔<input type="number" id="dmgMin" min="0" step="10" placeholder="min" inputmode="numeric" style="width:64px;"> 〜 <input type="number" id="dmgMax" min="0" step="10" placeholder="max" inputmode="numeric" style="width:64px;"></span>
     </div>
     <div class="favBar" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px">
       <span class="handLabel">⭐ お気に入り</span>
@@ -190,8 +192,15 @@ function renderCardLibrary(){
   const et=document.getElementById('energyFilter').value;
   const fl=document.getElementById('flagFilter').value;
   const sort=document.getElementById('sortBy').value;
+  const abilityOnly=document.getElementById('abilityFilter').checked;
+  const dmgMinV=document.getElementById('dmgMin').value, dmgMaxV=document.getElementById('dmgMax').value;
+  const dmgMin=dmgMinV===''?null:Number(dmgMinV), dmgMax=dmgMaxV===''?null:Number(dmgMaxV);
   const counts=deckCounts();
-  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q)||(c.effectText||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et)&&(!fl||(c.flags||[]).includes(fl))&&inCurrentFilter(c.id));
+  let cards=ALL_CARDS.filter(c=>(!q||String(c.id).includes(q)||(c.name||'').toLowerCase().includes(q)||(c.effectText||'').toLowerCase().includes(q))&&(!ct||c.cardType===ct)&&(!et||c.type===et)&&(!fl||(c.flags||[]).includes(fl))
+    &&(!abilityOnly||c.hasAbility)
+    &&(dmgMin===null||(c.maxDamage||0)>=dmgMin)
+    &&(dmgMax===null||(c.maxDamage||0)<=dmgMax)
+    &&inCurrentFilter(c.id));
   if(sort==='hp')        cards=cards.slice().sort((a,b)=>(b.hp||0)-(a.hp||0)||a.id-b.id);
   else if(sort==='dmg')  cards=cards.slice().sort((a,b)=>(b.maxDamage||0)-(a.maxDamage||0)||a.id-b.id);
   else if(sort==='type') cards=cards.slice().sort((a,b)=>String(a.type||'').localeCompare(String(b.type||''))||a.id-b.id);
@@ -419,7 +428,8 @@ function guardedNav(url){
 // タブを閉じる/リロード/URL変更などのハード遷移はブラウザ標準の確認を出す
 window.addEventListener('beforeunload',e=>{ if(DIRTY){e.preventDefault();e.returnValue='';} });
 
-['cardSearch','cardTypeFilter','energyFilter','flagFilter','sortBy'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
+['cardSearch','cardTypeFilter','energyFilter','flagFilter','sortBy','abilityFilter','dmgMin','dmgMax'].forEach(id=>document.getElementById(id).oninput=renderCardLibrary);
+document.getElementById('abilityFilter').addEventListener('change',renderCardLibrary);
 document.getElementById('deckNameInput').addEventListener('input',markDirty);
 document.getElementById('favCatFilter').onchange=e=>{FAV_FILTER=e.target.value;renderFavBar();renderCardLibrary();};
 document.getElementById('favManageBtn').onclick=openCategoryManager;
