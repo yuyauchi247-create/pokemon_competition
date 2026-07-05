@@ -708,7 +708,24 @@ async function openCard(cid,actions,nav){
     }
     return `<div class="mv">${head}${eff}</div>`;
   }).join('');
-  let body=mv;
+  // 付与ワザ: コアメモリ等のどうぐで「このポケモンが使える」ようになったワザは、
+  // 基本カードの moves に含まれないため上のループでは出ない。今使えるワザ選択肢
+  // (STATE.select の ATTACK) のうち、このカードのもので基本ワザに無いものを追加表示する。
+  const baseAtkIds=new Set((c.moves||[]).filter(m=>m.attackId!=null).map(m=>m.attackId));
+  // このカードが「今攻撃できるアクティブ」か（基本ワザに使用可能なものがある）。
+  // 付与ワザ選択肢の card がコアメモリ側になっても取りこぼさないための緩い判定。
+  const canAttackNow=(c.moves||[]).some(m=>m.attackId!=null&&atkMap[m.attackId]!=null);
+  const seenGrant=new Set();
+  const grantHtml=((STATE.select&&STATE.select.options)||[])
+    .filter(o=>o.optionType==='ATTACK'&&o.attackId!=null&&!baseAtkIds.has(o.attackId)
+               &&((o.card&&o.card.id===cid)||canAttackNow))
+    .filter(o=>{ if(seenGrant.has(o.attackId))return false; seenGrant.add(o.attackId); return true; })
+    .map(o=>{
+      const nm=String(o.label||'ワザ').replace(/^ワザ\s*/,'').replace(/"/g,'');
+      return `<button class="mvatk" data-idx="${o.index}" data-nm="${nm}">
+                <b>${nm}</b> <small style="color:#b8860b;float:right">付与ワザ</small></button>`;
+    }).join('');
+  let body=mv+grantHtml;
   if(!body && c.text) body=`<div class="mv">${c.text.replace(/\n/g,'<br>')}</div>`;
   if(!body) body='<div class="mrow" style="opacity:.6">テキスト情報なし</div>';
   const info=[]; if(c.evolvesFrom)info.push(`進化前: ${c.evolvesFrom}`);
