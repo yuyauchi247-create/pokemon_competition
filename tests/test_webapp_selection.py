@@ -100,6 +100,37 @@ class UserDeckTests(unittest.TestCase):
             self.assertEqual(listed[0]["id"], saved["id"])
             self.assertEqual(listed[0]["name"], "炎 デッキ!/../bad")
 
+    def test_list_user_decks_orders_by_updated_at_desc(self):
+        """一覧は最終編集日時(updated_at)の新しい順。ファイルmtime順ではない
+        （S3同期/rsyncでmtimeが書き換わっても順序が壊れないこと）。"""
+        deck = [151] * 4 + [152] * 4 + [666] * 4 + [2] * 48
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+
+            def mk(deck_id, name, updated_at=None):
+                (base / f"{deck_id}.csv").write_text("\n".join(str(c) for c in deck) + "\n")
+                meta = {"id": deck_id, "name": name, "visibility": "public"}
+                if updated_at is not None:
+                    meta["updated_at"] = updated_at
+                (base / f"{deck_id}.json").write_text(json.dumps(meta, ensure_ascii=False))
+
+            mk("old_1700000000000", "古い", updated_at=1700000000000)
+            mk("new_1720000000000", "新しい", updated_at=1720000000000)
+            mk("mid_1710000000000", "中間_updated_at無し")  # ID末尾の作成時刻(1710...)で代替
+
+            order = [d["name"] for d in list_user_decks(decks_dir=base)]
+            self.assertEqual(order, ["新しい", "中間_updated_at無し", "古い"])
+
+    def test_save_and_update_record_updated_at(self):
+        """save/update で updated_at(ms) が meta に記録される。"""
+        deck = [151] * 4 + [152] * 4 + [666] * 4 + [2] * 48
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            saved = save_user_deck("t", deck, decks_dir=base)
+            meta = json.loads((base / f"{saved['id']}.json").read_text())
+            self.assertIsInstance(meta.get("updated_at"), int)
+            self.assertGreater(meta["updated_at"], 0)
+
 
 class CustomAgentTests(unittest.TestCase):
     def test_load_custom_agent_loads_agent_function_from_python_file(self):
