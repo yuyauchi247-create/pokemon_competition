@@ -212,8 +212,11 @@ def check_deck_password(deck_id: str, password: str, decks_dir: Path | None = No
 
 
 def _deck_meta_payload(deck_id, name, visibility, password, old_hash=None):
+    # updated_at(最終編集時刻, ms)を content として保存する。ファイルmtimeはS3同期/rsyncで
+    # 転送時刻に書き換わり「最終編集順」を保てないため、一覧の並び替えはこの値を使う。
     meta = {"id": deck_id, "name": name,
-            "visibility": "private" if visibility == "private" else "public"}
+            "visibility": "private" if visibility == "private" else "public",
+            "updated_at": int(time.time() * 1000)}
     if meta["visibility"] == "private":
         if password:
             meta["password_hash"] = _hash_deck_password(deck_id, password)
@@ -349,24 +352,44 @@ def save_favorites(data, fav_dir: Path | None = None) -> dict:
     return {"categories": cats}
 
 
+def _deck_updated_at(deck_id: str, meta: dict, csv_path: Path) -> int:
+    """デッキの最終編集時刻(ms)。優先: meta.updated_at → ID末尾の作成時刻 → ファイルmtime。"""
+    ua = meta.get("updated_at")
+    if isinstance(ua, (int, float)) and ua > 0:
+        return int(ua)
+    # 旧デッキ(updated_at 無し): ID末尾に埋まっている作成時刻(ms)をフォールバックに使う。
+    m = re.search(r"_(\d{11,})$", deck_id)
+    if m:
+        return int(m.group(1))
+    try:
+        return int(csv_path.stat().st_mtime * 1000)
+    except OSError:
+        return 0
+
+
 def list_user_decks(decks_dir: Path | None = None) -> list[dict[str, str]]:
     base = decks_dir or USER_DECKS_DIR
     if not base.exists():
         return []
-    decks: list[dict[str, str]] = []
-    for csv_path in sorted(base.glob("*.csv"), key=lambda p: p.stat().st_mtime, reverse=True):
+    decks: list[dict] = []
+    for csv_path in base.glob("*.csv"):
         deck_id = csv_path.stem
         name = deck_id
         visibility = "public"
+        meta = {}
         meta_path = csv_path.with_suffix(".json")
         if meta_path.exists():
             try:
-                m = json.loads(meta_path.read_text(encoding="utf-8"))
-                name = m.get("name", name)
-                visibility = "private" if m.get("visibility") == "private" else "public"
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                name = meta.get("name", name)
+                visibility = "private" if meta.get("visibility") == "private" else "public"
             except json.JSONDecodeError:
-                pass
-        decks.append({"id": deck_id, "name": name, "visibility": visibility, "path": str(csv_path)})
+                meta = {}
+        decks.append({"id": deck_id, "name": name, "visibility": visibility,
+                      "path": str(csv_path),
+                      "updated_at": _deck_updated_at(deck_id, meta, csv_path)})
+    # 最終編集日時が新しい順（降順）。同値は id で安定化。
+    decks.sort(key=lambda d: (d["updated_at"], d["id"]), reverse=True)
     return decks
 
 
