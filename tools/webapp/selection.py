@@ -277,6 +277,23 @@ def read_user_deck(deck_id: str, decks_dir: Path | None = None) -> list[int]:
     return read_deck_csv_file(_safe_user_deck_path(deck_id, decks_dir))
 
 
+def touch_user_deck_opened(deck_id: str, decks_dir: Path | None = None) -> None:
+    """デッキを「開いた」時刻(opened_at, ms)を meta に記録する（一覧の並び順用）。
+
+    updated_at（最終編集時刻）は変更しない。meta が壊れていても例外は投げない。
+    """
+    base = decks_dir or USER_DECKS_DIR
+    meta = read_deck_meta(deck_id, decks_dir)
+    if not meta:
+        meta = {"id": deck_id}
+    meta["opened_at"] = int(time.time() * 1000)
+    try:
+        (base / f"{deck_id}.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
 # ===== お気に入りカード（全利用者で共有・data/favorites/favorites.json） =====
 # 構造: {"categories": [{"id": "...", "name": "水軸デッキ", "cards": [9, 12]}, ...]}
 # 1枚のカードは複数カテゴリに所属できる（タグ型）。
@@ -385,11 +402,16 @@ def list_user_decks(decks_dir: Path | None = None) -> list[dict[str, str]]:
                 visibility = "private" if meta.get("visibility") == "private" else "public"
             except json.JSONDecodeError:
                 meta = {}
+        updated_at = _deck_updated_at(deck_id, meta, csv_path)
+        opened_at = meta.get("opened_at")
+        opened_at = int(opened_at) if isinstance(opened_at, (int, float)) and opened_at > 0 else 0
         decks.append({"id": deck_id, "name": name, "visibility": visibility,
                       "path": str(csv_path),
-                      "updated_at": _deck_updated_at(deck_id, meta, csv_path)})
-    # 最終編集日時が新しい順（降順）。同値は id で安定化。
-    decks.sort(key=lambda d: (d["updated_at"], d["id"]), reverse=True)
+                      "updated_at": updated_at,
+                      # 「最後に触った時刻」= 開いた(opened_at) と 編集した(updated_at) の新しい方
+                      "last_opened": max(opened_at, updated_at)})
+    # 直近で開いた（または編集した）順（降順）。同値は id で安定化。
+    decks.sort(key=lambda d: (d["last_opened"], d["id"]), reverse=True)
     return decks
 
 
