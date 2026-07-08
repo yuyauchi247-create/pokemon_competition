@@ -359,12 +359,13 @@ async function saveBuilderDeck(){
 async function maybeLoadEdit(){
   const id=new URLSearchParams(location.search).get('edit');
   if(!id)return;
-  let d=await get('/api/user_decks/'+encodeURIComponent(id));
+  // touch=1: 「このデッキを開いた」印（デッキ一覧の直近で開いた順に反映）。
+  let d=await get('/api/user_decks/'+encodeURIComponent(id)+'?touch=1');
   // 非公開デッキはパスワードが必要（編集も中身閲覧のため）。
   while(d.private){
     const pw=prompt('このデッキは非公開です。編集するにはパスワードを入力してください。');
     if(pw===null){location.href='/decks';return;}
-    d=await get('/api/user_decks/'+encodeURIComponent(id)+'?password='+encodeURIComponent(pw));
+    d=await get('/api/user_decks/'+encodeURIComponent(id)+'?touch=1&password='+encodeURIComponent(pw));
     if(d.error&&!d.private){builderMessage(d.error);return;}
   }
   if(d.error){builderMessage(d.error);return;}

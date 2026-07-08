@@ -15,6 +15,7 @@ from tools.webapp.selection import (
     read_deck_csv_file,
     read_user_deck,
     save_user_deck,
+    touch_user_deck_opened,
     validate_deck_for_builder,
 )
 
@@ -130,6 +131,44 @@ class UserDeckTests(unittest.TestCase):
             meta = json.loads((base / f"{saved['id']}.json").read_text())
             self.assertIsInstance(meta.get("updated_at"), int)
             self.assertGreater(meta["updated_at"], 0)
+
+    def test_list_user_decks_orders_by_last_opened(self):
+        """直近で「開いた」(opened_at) デッキが、編集が古くても先頭に来る。"""
+        deck = [151] * 4 + [152] * 4 + [666] * 4 + [2] * 48
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+
+            def mk(deck_id, name, updated_at, opened_at=None):
+                (base / f"{deck_id}.csv").write_text("\n".join(str(c) for c in deck) + "\n")
+                meta = {"id": deck_id, "name": name, "visibility": "public",
+                        "updated_at": updated_at}
+                if opened_at is not None:
+                    meta["opened_at"] = opened_at
+                (base / f"{deck_id}.json").write_text(json.dumps(meta, ensure_ascii=False))
+
+            # 編集は古いが直近で開いたデッキが先頭。開いた後に編集したデッキはその編集時刻で並ぶ。
+            mk("a_1700000000000", "編集古い_直近で開いた", updated_at=1700000000000,
+               opened_at=1730000000000)
+            mk("b_1720000000000", "編集新しい_開いていない", updated_at=1720000000000)
+            mk("c_1725000000000", "開いた後に編集", updated_at=1725000000000,
+               opened_at=1710000000000)
+
+            order = [d["name"] for d in list_user_decks(decks_dir=base)]
+            self.assertEqual(order, ["編集古い_直近で開いた", "開いた後に編集", "編集新しい_開いていない"])
+
+    def test_touch_user_deck_opened_sets_opened_at_and_keeps_updated_at(self):
+        """touch は opened_at のみ更新し、updated_at（最終編集時刻）は変えない。"""
+        deck = [151] * 4 + [152] * 4 + [666] * 4 + [2] * 48
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            saved = save_user_deck("t", deck, decks_dir=base)
+            before = json.loads((base / f"{saved['id']}.json").read_text())
+            touch_user_deck_opened(saved["id"], decks_dir=base)
+            after = json.loads((base / f"{saved['id']}.json").read_text())
+            self.assertIsInstance(after.get("opened_at"), int)
+            self.assertGreater(after["opened_at"], 0)
+            self.assertEqual(after.get("updated_at"), before.get("updated_at"))
+            self.assertEqual(after.get("name"), before.get("name"))
 
 
 class CustomAgentTests(unittest.TestCase):

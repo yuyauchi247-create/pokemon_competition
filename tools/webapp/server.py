@@ -39,7 +39,7 @@ from selection import (  # noqa: E402
     sample_deck_options, save_user_agent, save_user_deck,
     update_user_agent_deck, update_user_deck, delete_user_deck,
     validate_ai_picks, validate_deck_for_builder, deck_has_basic,
-    deck_is_private, check_deck_password,
+    deck_is_private, check_deck_password, touch_user_deck_opened,
     list_user_combos, save_user_combo, read_user_combo, delete_user_combo,
     read_favorites, save_favorites,
 )
@@ -1682,6 +1682,9 @@ def api_user_deck(deck_id):
                 return jsonify({"error": "このデッキは非公開です。パスワードが必要です。",
                                 "private": True}), 403
         deck = read_user_deck(deck_id)
+        # ?touch=1 はビルダーでデッキを「開いた」印。一覧の並び順（直近で開いた順）に使う。
+        if request.args.get("touch"):
+            touch_user_deck_opened(deck_id)
         opt = next((d for d in list_user_decks() if d["id"] == deck_id), {"id": deck_id, "name": deck_id})
         return jsonify({"id": deck_id, "name": opt["name"],
                         "visibility": opt.get("visibility", "public"),
