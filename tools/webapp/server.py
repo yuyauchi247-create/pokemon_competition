@@ -45,6 +45,7 @@ from selection import (  # noqa: E402
 )
 from sim_env import (  # noqa: E402
     to_observation_class, battle_start, battle_select, battle_finish,
+    visualize_data,
     set_active_battle, render_option, card_name, card_meta, card_detail,
     option_card, option_energy_card, translate_logs, card_image_file, CARD_IMAGES_DIR,
     search_begin, search_step, search_end, build_determinization,
@@ -351,6 +352,11 @@ def _load_agent_side(gid, side, atype, file_field, id_field, default_deck):
 
 
 def _selected_opponent(gid, default_deck):
+    # 保存済みペア（デッキ＋エージェントの組合せ）を1クリック選択
+    cid = (request.form.get("opponent_combo_id") or "").strip()
+    if cid:
+        t, agent, deck, label = _combo_side_by_id(gid, "opponent", cid)
+        return t, agent, deck, label
     # AI vs AI 観戦: 相手側も「デッキ＋エージェント」の組合せで選ぶ（プレイヤー側と対称）。
     if request.form.get("opponent_select") == "combo":
         return _opponent_combo_side(gid)
@@ -421,6 +427,9 @@ def _selected_player_agent_side(gid):
     選んだデッキ(forced_deck)で動かす（新方式）。
     それ以外: 従来の player_type（rule / registered＝AI同梱デッキ）。
     """
+    cid = (request.form.get("player_combo_id") or "").strip()
+    if cid:
+        return _combo_side_by_id(gid, "player", cid)   # 保存済みペアを1クリック選択
     if request.form.get("player_select") == "combo":
         return _player_combo_side(gid)
     ptype = request.form.get("player_type", "rule")
@@ -431,6 +440,49 @@ def _selected_player_agent_side(gid):
     agent, deck, label = _load_agent_side(
         gid, "player", ptype, "player_agent_file", "player_agent_id", default_deck)
     return "custom", agent, deck, label
+
+
+def _combo_side_by_id(gid, side, combo_id):
+    """保存済みの組合せ（デッキ＋エージェントのペア）IDから対戦サイドを構成する。
+
+    対戦相手/自分を1クリックで選べるようにするための入口。ラベルは組合せの登録名。
+    "agent:<id>" は自動ペア＝デッキ同梱（deck.csv 持ち）の登録AIをそのまま使う。"""
+    if combo_id.startswith("agent:"):
+        aid = combo_id[len("agent:"):]
+        code = read_user_agent_code(aid)  # 不正IDは SelectionError
+        name = next((a["name"] for a in list_user_agents() if a["id"] == aid), aid)
+        forced = read_user_agent_deck(aid)
+        if not forced:
+            raise SelectionError("このAIにはデッキが同梱されていません。ペアを登録してください。")
+        agent, used_deck, _src = _materialize_agent(
+            gid, side, code, f"AI（{name}）", forced,
+            forced_deck=forced, extra_src=user_agent_dir(aid))
+        return "custom", agent, used_deck, name
+    combo = next((c for c in list_user_combos() if c["id"] == combo_id), None)
+    if combo is None:
+        raise SelectionError("選んだ組合せが見つかりません（削除された可能性があります）。")
+    dmode = combo.get("deck_mode") or "user"
+    did = combo.get("deck_id") or ""
+    if dmode == "user":
+        deck = read_user_deck(did)
+        deck_label = next((d["name"] for d in list_user_decks() if d["id"] == did),
+                          combo.get("deck_label") or did)
+    elif dmode == "agent":
+        deck = _agent_deck_list(did)
+        deck_label = next((a["name"] for a in list_user_agents() if a["id"] == did),
+                          combo.get("deck_label") or did)
+    else:
+        deck = read_sample_deck(did)
+        deck_label = combo.get("deck_label") or did
+    _require_basic_deck(deck)
+    aid = combo.get("agent_id") or ""
+    code = read_user_agent_code(aid)
+    name = next((a["name"] for a in list_user_agents() if a["id"] == aid), aid)
+    agent, used_deck, _src = _materialize_agent(
+        gid, side, code, f"AI（{name}）", deck,
+        forced_deck=deck, extra_src=user_agent_dir(aid))
+    label = combo.get("name") or f"{name} × {deck_label}"
+    return "custom", agent, used_deck, label
 
 
 def _player_combo_side(gid):
@@ -631,6 +683,44 @@ def _capture_frame(g):
         pass
 
 
+def _annotate_visualize(vis, steps):
+    """visualize リストへ Kaggle 実機と同型の注釈を付ける（公式ビジュアライザ互換）。
+
+    実際の Kaggle replay.json と突き合わせて確認した仕様:
+    - 各エントリに ver=2（形式バージョン。無いと公式プレイヤーが誤動作する）。
+    - vis[0].action は「両者のデッキ提出」＝60枚のカードID列×2（昇順）。
+      デッキは vis[0].current.players[j].deck（開始時は60枚全部入り）から再構成する。
+    - vis[i>=1].action は「盤面 i に至った選択」＝1つ前のエントリの select への回答
+      （cg の selected と同じ向き）。当レコーダーでは steps[i-1] の action。
+      対応を誤ると公式ビジュアライザが TypeError で途中停止する。
+    - obs.remainingOverageTime は Kaggle では残り持ち時間の実数。ローカルには無い概念
+      なので初期値の 600.0 を入れる（null だと表示系が壊れうる）。
+    """
+    decks = None
+    try:
+        decks = [sorted(c.get("id") for c in vis[0]["current"]["players"][j]["deck"])
+                 for j in range(2)]
+        if any(len(d) != 60 for d in decks):
+            decks = None
+    except Exception:
+        decks = None
+    for i, v in enumerate(vis):
+        v["ver"] = 2
+        obs, action = "", None
+        if i < len(steps):
+            k = 0 if steps[i][0].get("status") == "ACTIVE" else 1
+            obs = dict(steps[i][k].get("observation") or {})
+            obs.pop("search_begin_input", None)
+            if obs.get("remainingOverageTime") is None:
+                obs["remainingOverageTime"] = 600.0
+        if i == 0:
+            action = decks
+        elif i - 1 < len(steps):
+            action = [steps[i - 1][0].get("action"), steps[i - 1][1].get("action")]
+        v["obs"] = obs
+        v["action"] = action
+
+
 def _save_match_log(g):
     """対戦終了時に、対戦ログを Kaggle の replay.json 互換形式で data/logs/ に保存する。
 
@@ -654,7 +744,19 @@ def _save_match_log(g):
         winner = {0: p0, 1: p1}.get(result, "引き分け/未確定")
         finished = datetime.now(timezone.utc).isoformat()
         ts = finished.replace(":", "").replace("-", "").split(".")[0]
+        # Kaggle ビジュアライザ用データ。battle_finish 前・対象対戦がアクティブな
+        # うちに libcg から回収する（battle_ptr 単位なので他対戦とは混ざらない）。
+        vis = None
+        try:
+            vis = json.loads(visualize_data())
+        except Exception:
+            vis = None
         replay = rec.finalize(result)
+        if vis:
+            steps = replay.get("steps") or []
+            _annotate_visualize(vis, steps)
+            if steps:
+                steps[0][0]["visualize"] = vis
         # ローカル固有メタは info に補足（info は自由 dict なので Kaggle 互換を壊さない）。
         replay["info"]["TeamNames"] = [p0, p1]
         replay["info"]["Mode"] = g.get("mode")
@@ -662,6 +764,7 @@ def _save_match_log(g):
         replay["info"]["FinishedAt"] = finished
         path = LOGS_DIR / f"{ts}_{g.get('mode')}_{g.get('gid', '')[:8]}.json"
         path.write_text(json.dumps(replay, ensure_ascii=False, indent=2), encoding="utf-8")
+        g["log_file"] = path.stem  # AI観戦→リプレイ画面へ誘導するときに使う（/api/logs は拡張子なし）
         # 人が読みやすいテキスト版も併せて出力
         lines = [f"対戦ID: {g.get('gid')}", f"モード: {g.get('mode')}",
                  f"プレイヤー1(あなた視点): {p0}", f"プレイヤー2(相手視点): {p1}",
@@ -1333,11 +1436,18 @@ def _replay_to_view(replay):
         for e in evs:
             log.append({"turn": turn, **e})
         frames.append({"board": board, "events": evs, "result": result})
+    # Kaggle 互換の visualize データ（steps[0][0]）があれば渡す。
+    # AI vs AI のログはこれを使って Kaggle と同じ見た目で描画する。
+    vis = None
+    try:
+        vis = (replay.get("steps") or [[{}]])[0][0].get("visualize")
+    except Exception:
+        vis = None
     return {"gid": replay.get("id"), "mode": info.get("Mode"),
             "player0": names[0], "player1": names[1],
             "result": result, "winner": winner,
             "started_at": info.get("StartedAt"), "finished_at": info.get("FinishedAt"),
-            "log": log, "frames": frames}
+            "log": log, "frames": frames, "visualize": vis}
 
 
 @app.route("/api/logs", methods=["GET"])
@@ -2049,7 +2159,12 @@ def api_new():
 # ---- 組合せ(combo)＝デッキ+エージェント の保存API ----
 @app.route("/api/combos", methods=["GET"])
 def api_combos_list():
-    return jsonify({"combos": list_user_combos()})
+    combos = list_user_combos()
+    # 自動ペア: デッキ同梱（deck.csv 持ち）の登録AIは、登録操作なしでもペアとして選べる
+    autos = [{"id": f"agent:{a['id']}", "name": a["name"],
+              "agent_label": a["name"], "deck_label": "同梱デッキ", "auto": True}
+             for a in list_user_agents() if read_user_agent_deck(a["id"])]
+    return jsonify({"combos": combos + autos})
 
 
 @app.route("/api/combos", methods=["POST"])
@@ -2288,6 +2403,53 @@ def api_step():
     except SelectionError as exc:
         return jsonify({"error": str(exc), **_state_json(g)}), 400
     return jsonify(_state_json(g))
+
+
+# 1リクエストで対戦を進める上限秒。1worker/1thread の直列サーバを長時間塞がないよう
+# 区切り、クライアントが done になるまで繰り返し呼ぶ（重いAIでも他リクエストが挟まる）。
+RUN_BUDGET_S = 1.5
+RUN_STEPS_MAX = 20000  # 進行しない対戦の暴走ガード（headless ランナーと同じ上限）
+
+
+@app.route("/api/run", methods=["POST"])
+def api_run():
+    """AI vs AI モードで、対戦をリクエスト単位に区切りながら最後まで自動進行する。
+
+    リアルタイム観戦の代替。終了時には対戦ログが保存済みなので、クライアントは
+    返る log_file でリプレイ画面 (/replay?log=...) を開く。"""
+    g = _get_game(_request_gid())
+    if g is None or g["obs"] is None:
+        return jsonify(NO_GAME)
+    if g.get("mode") != "ai":
+        return jsonify({"error": "AI vs AI モードの対戦ではありません。"}), 400
+    deadline = time.time() + RUN_BUDGET_S
+    try:
+        while g["result"] == -1 and time.time() < deadline:
+            if g.get("run_steps", 0) >= RUN_STEPS_MAX:
+                return jsonify({"error": "対戦が規定手数内に終了しませんでした。"}), 400
+            ob = to_observation_class(g["obs"])
+            sel = ob.select
+            you = ob.current.yourIndex if ob.current else HUMAN
+            if sel is None or you != HUMAN:
+                _advance_until_human(g)  # 相手手番・コイン等を消化
+                continue
+            picks = _agent_pick(g, g.get("player_type"), g.get("player_agent"), sel, g["obs"])
+            g["events"] = []
+            g["obs"] = _record_select(g, picks)
+            g["ver"] = g.get("ver", 0) + 1
+            g["run_steps"] = g.get("run_steps", 0) + 1
+            _advance_until_human(g)
+    except SelectionError as exc:
+        return jsonify({"error": str(exc)}), 400
+    done = g["result"] != -1
+    turn = None
+    try:
+        cur = to_observation_class(g["obs"]).current
+        turn = cur.turn if cur else None
+    except Exception:
+        pass
+    return jsonify({"done": done, "result": g["result"], "turn": turn,
+                    "log_file": g.get("log_file") if done else None})
 
 
 # ─────────────────────────────────────────────────────────────

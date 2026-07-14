@@ -27,7 +27,7 @@ from cg.api import (  # noqa: E402
     search_begin, search_step, search_end, search_release,
     OptionType, SelectContext, AreaType, EnergyType, CardType, LogType,
 )
-from cg.game import battle_start, battle_select, battle_finish  # noqa: E402
+from cg.game import battle_start, battle_select, battle_finish, visualize_data  # noqa: E402
 from cg.sim import Battle  # noqa: E402
 
 

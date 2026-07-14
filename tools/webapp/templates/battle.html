@@ -1262,6 +1262,35 @@ function showNoGame(){
   ng.innerHTML='対戦がまだ開始されていません。<br><a href="/play">対戦メニュー</a>から対戦を始めてください。';
 }
 
+/* ---------- AI vs AI: 裏で最後まで実行し、リプレイ画面で結果を見る ---------- */
+async function runAiToReplay(st){
+  document.getElementById('playmat').classList.add('hidden');
+  document.querySelector('.handzone').classList.add('hidden');
+  const ng=document.getElementById('noGame');
+  ng.classList.remove('hidden');
+  const label=`${st.youLabel||'AI 1'}<br>vs ${st.oppLabel||'AI 2'}`;
+  const draw=t=>{ng.innerHTML=
+    `<div style="text-align:center;padding:28px 12px;">
+       <h2 style="margin:0 0 10px;">AI対戦を実行中…</h2>
+       <div style="font-weight:800;margin-bottom:10px;">${label}</div>
+       <div>ターン ${t??'-'}</div>
+       <div style="color:var(--sub);font-size:12px;margin-top:10px;">終了すると自動でリプレイ画面が開きます。</div>
+     </div>`;};
+  draw(st.board?st.board.turn:null);
+  for(;;){
+    let r;
+    try{r=await post('/api/run',{gid:GID});}
+    catch(e){ng.innerHTML='通信エラーが発生しました: '+(e.message||e);return;}
+    if(r.error){ng.innerHTML='エラー: '+r.error;return;}
+    if(r.done){
+      if(r.log_file){location.href='/replay?log='+encodeURIComponent(r.log_file);}
+      else{ng.innerHTML='対戦は終了しましたが、ログの保存に失敗しました。<br><a href="/replay">対戦ログ一覧</a>から確認してください。';}
+      return;
+    }
+    draw(r.turn);
+  }
+}
+
 /* ---------- 初期化 ---------- */
 (async ()=>{
   if(!GID){showNoGame();return;}
@@ -1275,11 +1304,12 @@ function showNoGame(){
     return;
   }
   if(!st||!st.board){showNoGame();return;}
+  // AI vs AI: リアルタイム観戦せず、裏で完走→リプレイ画面へ
+  if(st.mode==='ai'){runAiToReplay(st);return;}
   document.getElementById('logbody').innerHTML='';
   pushLog({who:'sys',text:'―― 対戦開始 ――'});
   await animateOpening(st);   // マリガンがあれば「手札→山札→引き直し」を演出
   await apply(st,true);
-  if(st.mode==='ai'&&st.result===-1){aiPlaying=true;renderAiControls();aiLoop();}
 })();
 </script>
 {% endblock %}
